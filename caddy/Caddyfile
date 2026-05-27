@@ -1,0 +1,13 @@
+{
+  email {$CADDY_EMAIL}
+}
+
+{$DOMAIN} {
+  encode gzip
+
+  @api path /api/*
+  reverse_proxy @api app:3000
+
+  respond /health "ok" 200
+  respond "Euro Save backend" 200
+}

@@ -115,3 +115,40 @@ Buttons:
 ```sh
 npm test
 ```
+
+## Hetzner deployment
+
+Production deploy is handled by GitHub Actions in `.github/workflows/deploy.yml`.
+
+One-time server setup on Ubuntu:
+
+```sh
+sudo bash scripts/install-hetzner.sh
+```
+
+Point DNS `A` record for `DOMAIN` to the Hetzner server IPv4 address, then add these GitHub repository secrets:
+
+```text
+HETZNER_HOST
+HETZNER_USER
+HETZNER_SSH_KEY
+HETZNER_SSH_PORT
+HETZNER_DEPLOY_PATH
+DOMAIN
+CADDY_EMAIL
+POSTGRES_PASSWORD
+DATABASE_URL
+TELEGRAM_BOT_TOKEN
+TELEGRAM_OWNER_ID
+IOS_SHORTCUT_SECRET
+DEFAULT_CURRENCY
+DEFAULT_TIMEZONE
+```
+
+For the bundled Postgres service, use this production `DATABASE_URL` shape:
+
+```text
+postgresql://expense_user:POSTGRES_PASSWORD@postgres:5432/expense_tracker
+```
+
+After secrets are configured, every push to `main` builds, tests and deploys to Hetzner.

@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "commonjs",
-  "main": "dist/main.js",
+  "main": "dist/src/main.js",
   "scripts": {
     "build": "nest build",
-    "start": "node dist/main.js",
+    "start": "node dist/src/main.js",
     "start:dev": "nest start --watch",
     "test": "jest --runInBand --watchman=false",
     "prisma:generate": "prisma generate",
