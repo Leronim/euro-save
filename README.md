@@ -1,29 +1,88 @@
 # Euro Save
 
-Telegram bot for parsing Eurobank/Hellenic card SMS messages and confirming expenses.
+Expense tracker backend for iPhone Shortcuts bank messages and Telegram confirmations.
 
-## Run
+Flow:
 
-```sh
-TELEGRAM_BOT_TOKEN=123456:telegram-token npm start
+```text
+iPhone Shortcuts -> POST /api/incoming/bank-message -> NestJS backend -> PostgreSQL -> Telegraf bot -> Expense
 ```
 
-Optional environment variables:
+## Stack
 
-- `ALLOWED_TELEGRAM_USER_ID` limits bot access to one Telegram user id.
-- `DATA_FILE` sets the JSON storage path. Default: `data/euro-save.json`.
+- Node.js + TypeScript
+- NestJS
+- PostgreSQL
+- Prisma
+- Telegraf
+- Docker Compose
+- Zod + class-validator
+- dayjs
 
-## Supported SMS
+## Run with Docker
+
+```sh
+cp .env.example .env
+docker compose up --build
+```
+
+Required `.env` values:
+
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_OWNER_ID`
+- `IOS_SHORTCUT_SECRET`
+
+## Local development
+
+```sh
+npm install
+npm run prisma:generate
+npm run prisma:migrate
+npm run prisma:seed
+npm run start:dev
+```
+
+## API
+
+```http
+POST /api/incoming/bank-message
+Content-Type: application/json
+```
+
+```json
+{
+  "source": "ios_shortcuts",
+  "secret": "123",
+  "sender": "Eurobank",
+  "text": "Purchase 12.40 EUR at LIDL",
+  "receivedAt": "2026-05-27T21:30:00+03:00"
+}
+```
+
+## Supported SMS examples
 
 ```text
 YOUR CARD *4617 WAS AUTHORISED FOR CAFEME RED BUS, €7,40 AT 20:12
+Purchase 12.40 EUR at LIDL
+Your card was charged EUR 8.90 at WOLT
+Refund 10.00 EUR from ZARA
 ```
 
-The bot parses card digits, merchant, amount, currency, status and transaction time. `authorised` messages create a pending expense. `declined` and `reversed` messages are stored as incoming bank messages but do not create expenses.
+The parser extracts amount, currency, merchant, transaction time, card digits and transaction type. `authorised` expense messages create pending expenses. `declined`, `reversed`, refund and income-like messages are stored but do not create expenses automatically.
 
-## Telegram flow
+## Telegram
 
-For an authorised SMS, the bot sends:
+Commands:
+
+```text
+/start
+/help
+/categories
+/month
+/stats
+```
+
+For a parsed expense, the bot sends:
 
 ```text
 💸 Найден расход
@@ -48,7 +107,7 @@ Buttons:
 `✏️ Изменить` accepts corrections in this format:
 
 ```text
-MERCHANT | 7.40 EUR | ☕ Кофе
+12.40 LIDL продукты
 ```
 
 ## Test

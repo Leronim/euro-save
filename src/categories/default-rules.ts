@@ -1,0 +1,30 @@
+export const DEFAULT_CATEGORIES = [
+  { name: 'Продукты', emoji: '🛒' },
+  { name: 'Еда', emoji: '🍔' },
+  { name: 'Кофе', emoji: '☕' },
+  { name: 'Транспорт', emoji: '🚕' },
+  { name: 'Дом', emoji: '🏠' },
+  { name: 'Развлечения', emoji: '🎮' },
+  { name: 'Здоровье', emoji: '💊' },
+  { name: 'Одежда', emoji: '👕' },
+  { name: 'Подписки', emoji: '📱' },
+  { name: 'Другое', emoji: '❓' },
+];
+
+export const DEFAULT_MERCHANT_RULES = [
+  { pattern: 'LIDL', categoryName: 'Продукты' },
+  { pattern: 'ALPHAMEGA', categoryName: 'Продукты' },
+  { pattern: 'WOLT', categoryName: 'Еда' },
+  { pattern: 'BOLT', categoryName: 'Транспорт' },
+  { pattern: 'UBER', categoryName: 'Транспорт' },
+  { pattern: 'SHELL', categoryName: 'Транспорт' },
+  { pattern: 'CAFEME', categoryName: 'Кофе' },
+  { pattern: 'CAFE', categoryName: 'Кофе' },
+  { pattern: 'STARBUCKS', categoryName: 'Кофе' },
+  { pattern: 'COFFEE ISLAND', categoryName: 'Кофе' },
+  { pattern: 'NETFLIX', categoryName: 'Подписки' },
+  { pattern: 'SPOTIFY', categoryName: 'Подписки' },
+  { pattern: 'APPLE.COM/BILL', categoryName: 'Подписки' },
+  { pattern: 'ZARA', categoryName: 'Одежда' },
+  { pattern: 'H&M', categoryName: 'Одежда' },
+];
