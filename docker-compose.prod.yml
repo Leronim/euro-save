@@ -32,7 +32,6 @@ services:
       - app
     environment:
       DOMAIN: ${DOMAIN}
-      CADDY_EMAIL: ${CADDY_EMAIL}
     ports:
       - "80:80"
       - "443:443"

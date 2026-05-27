@@ -69,7 +69,6 @@ jobs:
         env:
           DEPLOY_PATH: ${{ env.DEPLOY_PATH }}
           DOMAIN: ${{ secrets.DOMAIN }}
-          CADDY_EMAIL: ${{ secrets.CADDY_EMAIL }}
           POSTGRES_DB: ${{ secrets.POSTGRES_DB || 'expense_tracker' }}
           POSTGRES_USER: ${{ secrets.POSTGRES_USER || 'expense_user' }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
@@ -84,7 +83,7 @@ jobs:
           username: ${{ secrets.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_KEY }}
           port: ${{ secrets.HETZNER_SSH_PORT || '22' }}
-          envs: DEPLOY_PATH,DOMAIN,CADDY_EMAIL,POSTGRES_DB,POSTGRES_USER,POSTGRES_PASSWORD,DATABASE_URL,TELEGRAM_BOT_TOKEN,TELEGRAM_OWNER_ID,IOS_SHORTCUT_SECRET,DEFAULT_CURRENCY,DEFAULT_TIMEZONE
+          envs: DEPLOY_PATH,DOMAIN,POSTGRES_DB,POSTGRES_USER,POSTGRES_PASSWORD,DATABASE_URL,TELEGRAM_BOT_TOKEN,TELEGRAM_OWNER_ID,IOS_SHORTCUT_SECRET,DEFAULT_CURRENCY,DEFAULT_TIMEZONE
           script: |
             set -euo pipefail
 
@@ -100,7 +99,6 @@ jobs:
             NODE_ENV=production
             PORT=3000
             DOMAIN=${DOMAIN}
-            CADDY_EMAIL=${CADDY_EMAIL}
             POSTGRES_DB=${POSTGRES_DB}
             POSTGRES_USER=${POSTGRES_USER}
             POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
