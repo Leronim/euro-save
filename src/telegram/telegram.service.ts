@@ -132,6 +132,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       const id = (ctx.match as RegExpExecArray)[1];
       await this.expenses.ignorePendingExpense(id);
       await ctx.answerCbQuery('Игнорировано');
+      await this.deleteCallbackMessage(ctx);
       await ctx.reply('Ок, расход проигнорирован.');
     });
 
@@ -180,6 +181,18 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
           }
         : undefined,
     );
+  }
+
+  private async deleteCallbackMessage(ctx: Context) {
+    if (!ctx.callbackQuery || !('message' in ctx.callbackQuery) || !ctx.callbackQuery.message) {
+      return;
+    }
+
+    try {
+      await ctx.deleteMessage(ctx.callbackQuery.message.message_id);
+    } catch (error) {
+      this.logger.warn(`Unable to delete ignored expense message: ${error}`);
+    }
   }
 
   private formatPendingExpense(pending: PendingWithCategory): string {
