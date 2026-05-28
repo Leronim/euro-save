@@ -92,7 +92,13 @@ jobs:
             cd "$DEPLOY_PATH"
 
             if [ -z "${DATABASE_URL:-}" ]; then
-              DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+              ENCODED_POSTGRES_PASSWORD="$(python3 - <<'PY'
+            import os
+            import urllib.parse
+            print(urllib.parse.quote(os.environ["POSTGRES_PASSWORD"], safe=""))
+            PY
+            )"
+              DATABASE_URL="postgresql://${POSTGRES_USER}:${ENCODED_POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
             fi
 
             cat > .env <<EOF
@@ -109,6 +115,7 @@ jobs:
             DEFAULT_CURRENCY=${DEFAULT_CURRENCY}
             DEFAULT_TIMEZONE=${DEFAULT_TIMEZONE}
             EOF
+            chmod 600 .env
 
             docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
             docker compose -f docker-compose.prod.yml exec -T app node dist/prisma/seed.js
