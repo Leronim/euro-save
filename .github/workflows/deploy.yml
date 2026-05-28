@@ -1,4 +1,4 @@
-name: Deploy to Hetzner
+name: Test and Build
 
 on:
   push:
@@ -7,16 +7,12 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: deploy-production
+  group: test-and-build
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  test-build:
     runs-on: ubuntu-latest
-    environment: production
-
-    env:
-      DEPLOY_PATH: ${{ secrets.HETZNER_DEPLOY_PATH || '/opt/euro-save' }}
 
     steps:
       - name: Checkout
@@ -39,84 +35,3 @@ jobs:
 
       - name: Build
         run: npm run build
-
-      - name: Pack deployment archive
-        run: |
-          mkdir -p .deploy
-          tar \
-            --exclude='.git' \
-            --exclude='.github' \
-            --exclude='.env' \
-            --exclude='node_modules' \
-            --exclude='dist' \
-            --exclude='coverage' \
-            --exclude='.deploy' \
-            -czf .deploy/euro-save.tar.gz .
-
-      - name: Upload archive to Hetzner
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.HETZNER_HOST }}
-          username: ${{ secrets.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_KEY }}
-          port: ${{ secrets.HETZNER_SSH_PORT || '22' }}
-          source: .deploy/euro-save.tar.gz
-          target: /tmp
-          strip_components: 1
-
-      - name: Deploy on Hetzner
-        uses: appleboy/ssh-action@v1.2.0
-        env:
-          DEPLOY_PATH: ${{ env.DEPLOY_PATH }}
-          DOMAIN: ${{ secrets.DOMAIN }}
-          POSTGRES_DB: ${{ secrets.POSTGRES_DB || 'expense_tracker' }}
-          POSTGRES_USER: ${{ secrets.POSTGRES_USER || 'expense_user' }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_OWNER_ID: ${{ secrets.TELEGRAM_OWNER_ID }}
-          IOS_SHORTCUT_SECRET: ${{ secrets.IOS_SHORTCUT_SECRET }}
-          DEFAULT_CURRENCY: ${{ secrets.DEFAULT_CURRENCY || 'EUR' }}
-          DEFAULT_TIMEZONE: ${{ secrets.DEFAULT_TIMEZONE || 'Europe/Nicosia' }}
-        with:
-          host: ${{ secrets.HETZNER_HOST }}
-          username: ${{ secrets.HETZNER_USER }}
-          key: ${{ secrets.HETZNER_SSH_KEY }}
-          port: ${{ secrets.HETZNER_SSH_PORT || '22' }}
-          envs: DEPLOY_PATH,DOMAIN,POSTGRES_DB,POSTGRES_USER,POSTGRES_PASSWORD,DATABASE_URL,TELEGRAM_BOT_TOKEN,TELEGRAM_OWNER_ID,IOS_SHORTCUT_SECRET,DEFAULT_CURRENCY,DEFAULT_TIMEZONE
-          script: |
-            set -euo pipefail
-
-            mkdir -p "$DEPLOY_PATH"
-            tar -xzf /tmp/euro-save.tar.gz -C "$DEPLOY_PATH"
-            cd "$DEPLOY_PATH"
-
-            if [ -z "${DATABASE_URL:-}" ]; then
-              ENCODED_POSTGRES_PASSWORD="$(python3 - <<'PY'
-            import os
-            import urllib.parse
-            print(urllib.parse.quote(os.environ["POSTGRES_PASSWORD"], safe=""))
-            PY
-            )"
-              DATABASE_URL="postgresql://${POSTGRES_USER}:${ENCODED_POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
-            fi
-
-            cat > .env <<EOF
-            NODE_ENV=production
-            PORT=3000
-            DOMAIN=${DOMAIN}
-            POSTGRES_DB=${POSTGRES_DB}
-            POSTGRES_USER=${POSTGRES_USER}
-            POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-            DATABASE_URL=${DATABASE_URL}
-            TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-            TELEGRAM_OWNER_ID=${TELEGRAM_OWNER_ID}
-            IOS_SHORTCUT_SECRET=${IOS_SHORTCUT_SECRET}
-            DEFAULT_CURRENCY=${DEFAULT_CURRENCY}
-            DEFAULT_TIMEZONE=${DEFAULT_TIMEZONE}
-            EOF
-            chmod 600 .env
-
-            docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
-            docker compose -f docker-compose.prod.yml exec -T app node dist/prisma/seed.js
-            docker image prune -f
