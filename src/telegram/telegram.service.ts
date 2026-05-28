@@ -11,6 +11,7 @@ import { expenseConfirmationKeyboard } from './telegram-keyboards';
 type PendingWithCategory = PendingExpense & { category?: Category | null };
 type ExpenseWithCategory = Expense & { category?: Category | null };
 const WEEK_EXPENSES_BUTTON = '📊 Расходы за неделю';
+const HALF_YEAR_EXPENSES_BUTTON = '📈 Расходы за полгода';
 
 @Injectable()
 export class TelegramService implements OnModuleInit, OnModuleDestroy {
@@ -92,7 +93,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     });
 
     this.bot.help((ctx) =>
-      ctx.reply('Команды: /start, /help, /categories, /week, /month, /stats', {
+      ctx.reply('Команды: /start, /help, /categories, /week, /halfyear, /month, /stats', {
         reply_markup: this.mainMenuKeyboard(),
       }),
     );
@@ -117,6 +118,10 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
 
     this.bot.command('week', async (ctx) => {
       await this.replyCurrentWeekStats(ctx);
+    });
+
+    this.bot.command('halfyear', async (ctx) => {
+      await this.replyHalfYearStats(ctx);
     });
 
     this.bot.command('stats', async (ctx) => {
@@ -163,6 +168,11 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
 
       if (text === WEEK_EXPENSES_BUTTON) {
         await this.replyCurrentWeekStats(ctx);
+        return;
+      }
+
+      if (text === HALF_YEAR_EXPENSES_BUTTON) {
+        await this.replyHalfYearStats(ctx);
         return;
       }
 
@@ -231,9 +241,54 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  private async replyHalfYearStats(ctx: Context) {
+    const user = await this.ensureTelegramUser(ctx);
+    const stats = await this.expenses.getHalfYearStats(user.id);
+    const startLabel = dayjs(stats.start).format('DD.MM.YYYY');
+    const endLabel = dayjs(stats.end).format('DD.MM.YYYY');
+    const lines = [
+      '📈 Расходы за полгода',
+      `Период: ${startLabel}–${endLabel}`,
+      '',
+      `Всего: ${formatMoney(stats.total, stats.currency)}`,
+      `Операций: ${stats.expenseCount}`,
+      `Среднее в месяц: ${formatMoney(stats.averagePerMonth, stats.currency)}`,
+      '',
+      'По месяцам:',
+      ...stats.byMonth.map((row) => `${row.label}: ${formatMoney(row.amount, stats.currency)}`),
+      '',
+      'По категориям:',
+      ...(stats.byCategory.length
+        ? stats.byCategory.map((row) => `${row.category}: ${formatMoney(row.amount, stats.currency)}`)
+        : ['Нет расходов']),
+      '',
+      'Топ магазинов:',
+      ...(stats.topMerchants.length
+        ? stats.topMerchants.map(
+            (row, index) => `${index + 1}. ${row.merchant}: ${formatMoney(row.amount, stats.currency)} (${row.count})`,
+          )
+        : ['Нет расходов']),
+    ];
+
+    if (stats.largestExpense) {
+      lines.push(
+        '',
+        'Самый крупный расход:',
+        `${stats.largestExpense.merchant} — ${formatMoney(
+          stats.largestExpense.amount,
+          stats.largestExpense.currency,
+        )} — ${dayjs(stats.largestExpense.date).format('DD.MM.YYYY')}`,
+      );
+    }
+
+    await ctx.reply(lines.join('\n'), {
+      reply_markup: this.mainMenuKeyboard(),
+    });
+  }
+
   private mainMenuKeyboard() {
     return {
-      keyboard: [[{ text: WEEK_EXPENSES_BUTTON }]],
+      keyboard: [[{ text: WEEK_EXPENSES_BUTTON }], [{ text: HALF_YEAR_EXPENSES_BUTTON }]],
       resize_keyboard: true,
       one_time_keyboard: false,
     };

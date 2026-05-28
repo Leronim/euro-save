@@ -4,7 +4,7 @@ import { ExpenseSource, PendingExpense, Prisma, User } from '@prisma/client';
 import dayjs from 'dayjs';
 import 'dayjs/locale/ru';
 import { CategoriesService } from '../categories/categories.service';
-import { monthRange, weekRange } from '../common/utils/date';
+import { halfYearRange, monthRange, weekRange } from '../common/utils/date';
 import { ManualExpenseParserService } from '../parser/manual-expense-parser.service';
 import { ParsedBankMessage } from '../parser/parsed-bank-message';
 import { PrismaService } from '../prisma/prisma.service';
@@ -173,6 +173,85 @@ export class ExpensesService {
     };
   }
 
+  async getHalfYearStats(userId: string) {
+    const { start, end } = halfYearRange();
+    const expenses = await this.prisma.expense.findMany({
+      where: {
+        userId,
+        transactionDate: {
+          gte: start,
+          lt: end,
+        },
+      },
+      include: { category: true },
+      orderBy: { transactionDate: 'desc' },
+    });
+
+    const currency = this.config.get<string>('DEFAULT_CURRENCY', 'EUR');
+    const total = expenses.reduce((sum, expense) => sum + Number(expense.amount), 0);
+    const months = new Map<string, { label: string; amount: number }>();
+    const byCategory = new Map<string, { category: string; amount: number }>();
+    const byMerchant = new Map<string, { merchant: string; amount: number; count: number }>();
+
+    for (let index = 5; index >= 0; index -= 1) {
+      const month = dayjs().subtract(index, 'month').startOf('month');
+      months.set(month.format('YYYY-MM'), {
+        label: month.locale('ru').format('MMMM YYYY'),
+        amount: 0,
+      });
+    }
+
+    for (const expense of expenses) {
+      const amount = Number(expense.amount);
+      const monthKey = dayjs(expense.transactionDate).format('YYYY-MM');
+      const month = months.get(monthKey);
+      if (month) {
+        month.amount += amount;
+      }
+
+      const categoryKey = expense.categoryId ?? 'other';
+      const category = byCategory.get(categoryKey) ?? {
+        category: this.categories.formatCategory(expense.category),
+        amount: 0,
+      };
+      category.amount += amount;
+      byCategory.set(categoryKey, category);
+
+      const merchantName = expense.merchant ?? expense.description ?? 'Без названия';
+      const merchantKey = merchantName.toLowerCase();
+      const merchant = byMerchant.get(merchantKey) ?? {
+        merchant: merchantName,
+        amount: 0,
+        count: 0,
+      };
+      merchant.amount += amount;
+      merchant.count += 1;
+      byMerchant.set(merchantKey, merchant);
+    }
+
+    const largestExpense = [...expenses].sort((left, right) => Number(right.amount) - Number(left.amount))[0];
+
+    return {
+      start,
+      end: dayjs(end).subtract(1, 'day').toDate(),
+      total,
+      currency,
+      expenseCount: expenses.length,
+      averagePerMonth: total / 6,
+      byMonth: [...months.values()],
+      byCategory: [...byCategory.values()].sort((left, right) => right.amount - left.amount),
+      topMerchants: [...byMerchant.values()].sort((left, right) => right.amount - left.amount).slice(0, 5),
+      largestExpense: largestExpense
+        ? {
+            merchant: largestExpense.merchant ?? largestExpense.description ?? 'Расход',
+            amount: Number(largestExpense.amount),
+            currency: largestExpense.currency,
+            date: largestExpense.transactionDate,
+          }
+        : undefined,
+    };
+  }
+
   private async getStatsForRange(userId: string, start: Date, end: Date) {
     const expenses = await this.prisma.expense.findMany({
       where: {
@@ -202,7 +281,7 @@ export class ExpensesService {
     return {
       total,
       currency: this.config.get<string>('DEFAULT_CURRENCY', 'EUR'),
-      byCategory: [...byCategory.values()],
+      byCategory: [...byCategory.values()].sort((left, right) => right.amount - left.amount),
     };
   }
 

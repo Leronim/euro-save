@@ -17,3 +17,9 @@ export function weekRange(date = new Date()) {
   const end = dayjs(start).add(7, 'day').toDate();
   return { start, end };
 }
+
+export function halfYearRange(date = new Date()) {
+  const start = dayjs(date).subtract(5, 'month').startOf('month').toDate();
+  const end = dayjs(date).add(1, 'month').startOf('month').toDate();
+  return { start, end };
+}
