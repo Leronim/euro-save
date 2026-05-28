@@ -151,3 +151,28 @@ postgresql://expense_user:POSTGRES_PASSWORD@postgres:5432/expense_tracker
 ```
 
 After secrets are configured, every push to `main` builds, tests and deploys to Hetzner.
+
+## Hetzner pull-based deploy
+
+The current server uses a pull-based deploy timer, so it does not require GitHub secrets. The server polls `origin/main` every minute and redeploys only when the commit changes.
+
+Installed unit files:
+
+```text
+/etc/systemd/system/euro-save-deploy.service
+/etc/systemd/system/euro-save-deploy.timer
+```
+
+The service runs:
+
+```text
+/opt/euro-save/scripts/euro-save-deploy.sh
+```
+
+Useful server commands:
+
+```sh
+systemctl status euro-save-deploy.timer
+journalctl -u euro-save-deploy.service -n 100 --no-pager
+cd /opt/euro-save && docker compose -f docker-compose.prod.yml ps
+```

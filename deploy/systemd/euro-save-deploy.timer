@@ -1,0 +1,12 @@
+[Unit]
+Description=Poll GitHub and deploy Euro Save
+
+[Timer]
+OnBootSec=30
+OnUnitActiveSec=60
+AccuracySec=10
+Persistent=true
+Unit=euro-save-deploy.service
+
+[Install]
+WantedBy=timers.target
