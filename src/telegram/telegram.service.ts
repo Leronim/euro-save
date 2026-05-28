@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Category, Expense, PendingExpense } from '@prisma/client';
+import dayjs from 'dayjs';
 import { Context, Telegraf } from 'telegraf';
 import { CategoriesService } from '../categories/categories.service';
 import { formatMoney } from '../common/utils/money';
@@ -9,6 +10,7 @@ import { expenseConfirmationKeyboard } from './telegram-keyboards';
 
 type PendingWithCategory = PendingExpense & { category?: Category | null };
 type ExpenseWithCategory = Expense & { category?: Category | null };
+const WEEK_EXPENSES_BUTTON = '📊 Расходы за неделю';
 
 @Injectable()
 export class TelegramService implements OnModuleInit, OnModuleDestroy {
@@ -83,10 +85,17 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
           '',
           'Или подключить iPhone Shortcuts для автоматического импорта банковских SMS.',
         ].join('\n'),
+        {
+          reply_markup: this.mainMenuKeyboard(),
+        },
       );
     });
 
-    this.bot.help((ctx) => ctx.reply('Команды: /start, /help, /categories, /month, /stats'));
+    this.bot.help((ctx) =>
+      ctx.reply('Команды: /start, /help, /categories, /week, /month, /stats', {
+        reply_markup: this.mainMenuKeyboard(),
+      }),
+    );
 
     this.bot.command('categories', async (ctx) => {
       const categories = await this.categories.listExpenseCategories();
@@ -104,6 +113,10 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
         ...stats.byCategory.map((row) => `${row.category}: ${formatMoney(row.amount, stats.currency)}`),
       ];
       await ctx.reply(lines.join('\n'));
+    });
+
+    this.bot.command('week', async (ctx) => {
+      await this.replyCurrentWeekStats(ctx);
     });
 
     this.bot.command('stats', async (ctx) => {
@@ -147,6 +160,11 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       const user = await this.ensureTelegramUser(ctx);
       const text = ctx.message.text;
       const editPendingId = this.editState.get(ctx.chat.id);
+
+      if (text === WEEK_EXPENSES_BUTTON) {
+        await this.replyCurrentWeekStats(ctx);
+        return;
+      }
 
       if (editPendingId) {
         const pending = await this.expenses.editPendingExpense(editPendingId, text);
@@ -193,6 +211,32 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     } catch (error) {
       this.logger.warn(`Unable to delete ignored expense message: ${error}`);
     }
+  }
+
+  private async replyCurrentWeekStats(ctx: Context) {
+    const user = await this.ensureTelegramUser(ctx);
+    const stats = await this.expenses.getCurrentWeekStats(user.id);
+    const startLabel = dayjs(stats.start).format('DD.MM');
+    const endLabel = dayjs(stats.end).format('DD.MM');
+    const lines = [
+      `📊 Расходы за неделю ${startLabel}–${endLabel}`,
+      '',
+      `Всего: ${formatMoney(stats.total, stats.currency)}`,
+      '',
+      ...stats.byCategory.map((row) => `${row.category}: ${formatMoney(row.amount, stats.currency)}`),
+    ];
+
+    await ctx.reply(lines.join('\n'), {
+      reply_markup: this.mainMenuKeyboard(),
+    });
+  }
+
+  private mainMenuKeyboard() {
+    return {
+      keyboard: [[{ text: WEEK_EXPENSES_BUTTON }]],
+      resize_keyboard: true,
+      one_time_keyboard: false,
+    };
   }
 
   private formatPendingExpense(pending: PendingWithCategory): string {

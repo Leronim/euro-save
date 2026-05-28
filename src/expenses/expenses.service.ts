@@ -4,7 +4,7 @@ import { ExpenseSource, PendingExpense, Prisma, User } from '@prisma/client';
 import dayjs from 'dayjs';
 import 'dayjs/locale/ru';
 import { CategoriesService } from '../categories/categories.service';
-import { monthRange } from '../common/utils/date';
+import { monthRange, weekRange } from '../common/utils/date';
 import { ManualExpenseParserService } from '../parser/manual-expense-parser.service';
 import { ParsedBankMessage } from '../parser/parsed-bank-message';
 import { PrismaService } from '../prisma/prisma.service';
@@ -154,6 +154,26 @@ export class ExpensesService {
 
   async getCurrentMonthStats(userId: string) {
     const { start, end } = monthRange();
+    const stats = await this.getStatsForRange(userId, start, end);
+
+    return {
+      ...stats,
+      monthName: dayjs().locale('ru').format('MMMM'),
+    };
+  }
+
+  async getCurrentWeekStats(userId: string) {
+    const { start, end } = weekRange();
+    const stats = await this.getStatsForRange(userId, start, end);
+
+    return {
+      ...stats,
+      start,
+      end: dayjs(end).subtract(1, 'day').toDate(),
+    };
+  }
+
+  private async getStatsForRange(userId: string, start: Date, end: Date) {
     const expenses = await this.prisma.expense.findMany({
       where: {
         userId,
@@ -180,7 +200,6 @@ export class ExpensesService {
     }
 
     return {
-      monthName: dayjs().locale('ru').format('MMMM'),
       total,
       currency: this.config.get<string>('DEFAULT_CURRENCY', 'EUR'),
       byCategory: [...byCategory.values()],

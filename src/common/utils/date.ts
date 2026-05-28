@@ -9,3 +9,11 @@ export function monthRange(date = new Date()) {
   const end = dayjs(date).add(1, 'month').startOf('month').toDate();
   return { start, end };
 }
+
+export function weekRange(date = new Date()) {
+  const current = dayjs(date);
+  const mondayOffset = (current.day() + 6) % 7;
+  const start = current.subtract(mondayOffset, 'day').startOf('day').toDate();
+  const end = dayjs(start).add(7, 'day').toDate();
+  return { start, end };
+}
