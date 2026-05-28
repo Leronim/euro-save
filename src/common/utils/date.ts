@@ -10,6 +10,12 @@ export function monthRange(date = new Date()) {
   return { start, end };
 }
 
+export function dayRange(date = new Date()) {
+  const start = dayjs(date).startOf('day').toDate();
+  const end = dayjs(date).add(1, 'day').startOf('day').toDate();
+  return { start, end };
+}
+
 export function weekRange(date = new Date()) {
   const current = dayjs(date);
   const mondayOffset = (current.day() + 6) % 7;

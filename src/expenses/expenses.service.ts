@@ -1,10 +1,11 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ExpenseSource, PendingExpense, Prisma, User } from '@prisma/client';
+import { Category, Expense, ExpenseSource, PendingExpense, Prisma, User } from '@prisma/client';
 import dayjs from 'dayjs';
 import 'dayjs/locale/ru';
 import { CategoriesService } from '../categories/categories.service';
-import { halfYearRange, monthRange, weekRange } from '../common/utils/date';
+import { dayRange, halfYearRange, monthRange, weekRange } from '../common/utils/date';
+import { formatMoney } from '../common/utils/money';
 import { ManualExpenseParserService } from '../parser/manual-expense-parser.service';
 import { ParsedBankMessage } from '../parser/parsed-bank-message';
 import { PrismaService } from '../prisma/prisma.service';
@@ -162,6 +163,17 @@ export class ExpensesService {
     };
   }
 
+  async getTodayStats(userId: string) {
+    const { start, end } = dayRange();
+    const stats = await this.getStatsForRange(userId, start, end);
+
+    return {
+      ...stats,
+      start,
+      end: dayjs(end).subtract(1, 'second').toDate(),
+    };
+  }
+
   async getCurrentWeekStats(userId: string) {
     const { start, end } = weekRange();
     const stats = await this.getStatsForRange(userId, start, end);
@@ -280,6 +292,8 @@ export class ExpensesService {
 
     return {
       total,
+      expenseCount: expenses.length,
+      averageExpense: expenses.length ? total / expenses.length : 0,
       currency: this.config.get<string>('DEFAULT_CURRENCY', 'EUR'),
       byCategory: [...byCategory.values()].sort((left, right) => right.amount - left.amount),
     };
@@ -292,5 +306,100 @@ export class ExpensesService {
       orderBy: { transactionDate: 'desc' },
       take,
     });
+  }
+
+  async getExpense(id: string, userId: string) {
+    const expense = await this.prisma.expense.findFirst({
+      where: { id, userId },
+      include: { category: true },
+    });
+    if (!expense) throw new NotFoundException('Expense not found');
+    return expense;
+  }
+
+  async deleteExpense(id: string, userId: string) {
+    const expense = await this.getExpense(id, userId);
+    await this.prisma.expense.delete({ where: { id } });
+    return expense;
+  }
+
+  async deleteLatestExpense(userId: string) {
+    const expense = await this.prisma.expense.findFirst({
+      where: { userId },
+      include: { category: true },
+      orderBy: { transactionDate: 'desc' },
+    });
+    if (!expense) throw new NotFoundException('Expense not found');
+    await this.prisma.expense.delete({ where: { id: expense.id } });
+    return expense;
+  }
+
+  async updateExpenseFromText(id: string, userId: string, text: string) {
+    const expense = await this.getExpense(id, userId);
+    const parsed = this.manualParser.parse(text, expense.currency);
+    if (!parsed) throw new BadRequestException('Unable to parse edited expense');
+
+    const category = await this.categories.categorizeMerchant(userId, parsed.merchant);
+    return this.prisma.expense.update({
+      where: { id },
+      data: {
+        amount: new Prisma.Decimal(parsed.amount),
+        currency: parsed.currency,
+        merchant: parsed.merchant,
+        description: parsed.description,
+        categoryId: category.id,
+      },
+      include: { category: true },
+    });
+  }
+
+  async updateExpenseCategory(id: string, userId: string, categoryId: string) {
+    await this.getExpense(id, userId);
+    return this.prisma.expense.update({
+      where: { id },
+      data: { categoryId },
+      include: { category: true },
+    });
+  }
+
+  async searchExpenses(userId: string, query: string, take = 10) {
+    const normalized = query.trim();
+    if (!normalized) return [];
+
+    return this.prisma.expense.findMany({
+      where: {
+        userId,
+        OR: [
+          { merchant: { contains: normalized, mode: 'insensitive' } },
+          { description: { contains: normalized, mode: 'insensitive' } },
+        ],
+      },
+      include: { category: true },
+      orderBy: { transactionDate: 'desc' },
+      take,
+    });
+  }
+
+  async getExpensesForExport(userId: string, period: 'month' | 'halfyear') {
+    const { start, end } = period === 'month' ? monthRange() : halfYearRange();
+    return this.prisma.expense.findMany({
+      where: {
+        userId,
+        transactionDate: {
+          gte: start,
+          lt: end,
+        },
+      },
+      include: { category: true },
+      orderBy: { transactionDate: 'desc' },
+    });
+  }
+
+  formatExpenseLine(expense: Expense & { category?: Category | null }, index?: number) {
+    const prefix = typeof index === 'number' ? `${index}. ` : '';
+    return `${prefix}${expense.merchant ?? expense.description ?? 'Расход'} — ${formatMoney(
+      Number(expense.amount),
+      expense.currency,
+    )} — ${this.categories.formatCategory(expense.category)}`;
   }
 }
