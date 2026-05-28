@@ -1,5 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import dayjs from 'dayjs';
 import { ExpensesService } from '../src/expenses/expenses.service';
 
 describe('ExpensesService', () => {
@@ -237,13 +238,16 @@ describe('ExpensesService', () => {
       where: {
         userId: 'user-1',
         transactionDate: {
-          gte: new Date('2026-04-30T21:00:00.000Z'),
-          lt: new Date('2026-05-31T21:00:00.000Z'),
+          gte: expect.any(Date),
+          lt: expect.any(Date),
         },
       },
       include: { category: true },
       orderBy: { transactionDate: 'desc' },
     });
+    const range = prisma.expense.findMany.mock.calls[0][0].where.transactionDate;
+    expect(dayjs(range.gte).format('YYYY-MM-DD HH:mm:ss')).toBe('2026-05-01 00:00:00');
+    expect(dayjs(range.lt).format('YYYY-MM-DD HH:mm:ss')).toBe('2026-06-01 00:00:00');
   });
 
   it('calculates half-year stats with months, categories, merchants and largest expense', async () => {
