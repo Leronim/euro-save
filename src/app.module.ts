@@ -1,3 +1,5 @@
+import { MiniAppController, MiniAppPageController } from './mini-app/mini-app.controller';
+import { TelegramAuthGuard } from './mini-app/telegram-auth.guard';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { CategoriesModule } from './categories/categories.module';
@@ -9,6 +11,8 @@ import { PrismaModule } from './prisma/prisma.module';
 import { TelegramModule } from './telegram/telegram.module';
 
 @Module({
+  controllers: [MiniAppController, MiniAppPageController],
+  providers: [TelegramAuthGuard],
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,

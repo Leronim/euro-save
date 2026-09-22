@@ -124,5 +124,6 @@ export function renderPeriodReport(report: Report, view: ReportView = 's', reque
   keyboard.push([button(r.period === 'w' ? '✓ Неделя' : 'Неделя', 'w'), button(r.period === 'm' ? '✓ Месяц' : 'Месяц', 'm')]);
   const currentAnchor = key(dayjs().tz(r.timezone));
   if (!r.active) keyboard.push([button('К текущему периоду', r.period, currentAnchor)]);
+  keyboard.push([{ text: '✕ Закрыть отчёт', callback_data: 'report:close' }]);
   return { text: lines.join('\n\n').replace(/\n{3,}/g, '\n\n'), reply_markup: { inline_keyboard: keyboard } };
 }

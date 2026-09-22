@@ -61,15 +61,9 @@ describe('TelegramService helpers', () => {
     expect(csv).toContain('"🛒 Продукты"');
   });
 
-  it('builds main menu keyboard', () => {
+  it('removes the old reply keyboard', () => {
     const { service } = createService();
-
-    expect((service as never as { mainMenuKeyboard: () => { keyboard: { text: string }[][] } }).mainMenuKeyboard().keyboard).toEqual([
-      [{ text: '📅 Сегодня' }, { text: '📊 Расходы за неделю' }],
-      [{ text: '🗓 Расходы за месяц' }, { text: '📈 Расходы за полгода' }],
-      [{ text: '🧾 Последние расходы' }, { text: '↩️ Отменить последний' }],
-      [{ text: '🔎 Поиск' }, { text: '📤 Экспорт CSV' }],
-    ]);
+    expect((service as any).mainMenuKeyboard()).toEqual({ remove_keyboard: true });
   });
 
   it('formats pending expense confirmation text', () => {

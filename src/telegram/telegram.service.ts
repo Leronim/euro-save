@@ -50,6 +50,8 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    await this.bot.telegram.setChatMenuButton({ menuButton: { type: 'web_app', text: 'Мои расходы', web_app: { url: this.miniAppUrl() } } }).catch(error => this.logger.warn(`Unable to configure Mini App menu: ${error}`));
+
     void this.bot
       .launch()
       .then(() => {
@@ -92,28 +94,21 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   private registerHandlers() {
     if (!this.bot) return;
 
-    this.bot.start(async (ctx) => {
-      await this.ensureTelegramUser(ctx);
-      await ctx.reply(
-        [
-          'Привет! Я буду помогать отслеживать расходы.',
-          '',
-          'Можно отправлять расходы вручную:',
-          '12.50 lidl',
-          '',
-          'Или подключить iPhone Shortcuts для автоматического импорта банковских SMS.',
-        ].join('\n'),
-        {
-          reply_markup: this.mainMenuKeyboard(),
-        },
-      );
+    this.bot.command('app', async (ctx) => this.openApp(ctx));
+    this.bot.command('menu', async (ctx) => this.openApp(ctx));
+    this.bot.command('cancel', async (ctx) => this.openApp(ctx));
+    this.bot.action(/^report:close$/, async (ctx) => {
+      await ctx.answerCbQuery();
+      await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+      await this.openApp(ctx);
     });
 
-    this.bot.help((ctx) =>
-      ctx.reply('Команды: /start, /help, /categories, /today, /week, /month, /halfyear, /stats, /search, /export', {
-        reply_markup: this.mainMenuKeyboard(),
-      }),
-    );
+    this.bot.start(async (ctx) => {
+      await this.ensureTelegramUser(ctx);
+      await this.openApp(ctx);
+    });
+
+    this.bot.help(async (ctx) => this.openApp(ctx));
 
     this.bot.command('categories', async (ctx) => {
       const categories = await this.categories.listExpenseCategories();
@@ -563,17 +558,22 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
     return token;
   }
 
+  private miniAppUrl() {
+    return this.config.get<string>('MINI_APP_URL', 'https://46.225.185.193.sslip.io/mini-app');
+  }
+
   private mainMenuKeyboard() {
-    return {
-      keyboard: [
-        [{ text: TODAY_EXPENSES_BUTTON }, { text: WEEK_EXPENSES_BUTTON }],
-        [{ text: MONTH_EXPENSES_BUTTON }, { text: HALF_YEAR_EXPENSES_BUTTON }],
-        [{ text: LATEST_EXPENSES_BUTTON }, { text: UNDO_LAST_EXPENSE_BUTTON }],
-        [{ text: SEARCH_EXPENSES_BUTTON }, { text: EXPORT_EXPENSES_BUTTON }],
-      ],
-      resize_keyboard: true,
-      one_time_keyboard: false,
-    };
+    return { remove_keyboard: true as const };
+  }
+
+  private async openApp(ctx: Context) {
+    this.editState.delete(ctx.chat?.id ?? 0);
+    await ctx.reply('Привет! Расходы, графики и категории теперь в приложении. Здесь можно отправлять покупки и подтверждать SMS.', {
+      reply_markup: this.mainMenuKeyboard(),
+    });
+    await ctx.reply('Откройте «Мои расходы». Закрыть приложение и вернуться в чат можно в любой момент.', {
+      reply_markup: { inline_keyboard: [[{ text: '📊 Мои расходы', web_app: { url: this.miniAppUrl() } }]] },
+    });
   }
 
   private formatPendingExpense(pending: PendingWithCategory): string {

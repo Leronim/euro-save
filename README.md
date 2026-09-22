@@ -191,3 +191,23 @@ time in the previous period, capped at the end of shorter months. Monthly foreca
 use the average per elapsed calendar day and appear from day three onward.
 
 Validation: `npm run build` and `TZ=UTC npm test`.
+
+## Telegram Mini App
+
+Open `/app` or the Telegram menu button **Мои расходы**. `/start`, `/menu` and
+`/cancel` clear editing state, remove the old reply keyboard and show the app button.
+Text reports remain available, with a close button on newly opened reports.
+
+The application is served at `/mini-app` by NestJS through Caddy. It has overview,
+category and operation tabs, weekly/monthly navigation, currency-specific charts,
+search within the selected period, and forms for creating/editing confirmed expenses.
+The browser uses the device timezone for date entry; report boundaries use the configured
+Nicosia timezone. No extra frontend build or database migration is required.
+
+Set `MINI_APP_URL` to the public HTTPS URL if moving to another host. Docker includes
+`public/mini-app`; the deploy script recreates Caddy to load updated routes.
+
+Every `/api/mini-app` request requires `X-Telegram-Init-Data`: server-side HMAC
+validation, maximum age 24 hours and the configured `TELEGRAM_OWNER_ID` are checked.
+No credentials or expenses are saved to browser storage. Opening the URL in a normal
+browser displays an instruction to open it from Telegram, without exposing expenses.

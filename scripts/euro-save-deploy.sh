@@ -29,6 +29,8 @@ git checkout -B main origin/main
 git clean -fd -e .env
 
 docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
+# Recreate to pick up replaced bind-mounted Caddyfile and updated routes.
+docker compose -f docker-compose.prod.yml up -d --force-recreate --no-deps caddy
 
 for attempt in 1 2 3 4 5; do
   if docker compose -f docker-compose.prod.yml exec -T app node dist/prisma/seed.js; then

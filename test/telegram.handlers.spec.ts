@@ -13,7 +13,7 @@ const telegrafInstances: any[] = [];
 
 jest.mock('telegraf', () => {
   class Telegraf {
-    telegram = { sendMessage: jest.fn() };
+    telegram = { sendMessage: jest.fn(), setChatMenuButton: jest.fn().mockResolvedValue(true) };
     launch = jest.fn(() => Promise.resolve());
     stop = jest.fn();
 
@@ -215,7 +215,7 @@ describe('TelegramService handlers', () => {
     await handlers.onText?.(ctx);
 
     expect(ctx.reply.mock.calls[0][0]).toContain('Привет');
-    expect(ctx.reply.mock.calls[1][0]).toContain('Расходы за сегодня');
+    expect(ctx.reply.mock.calls[2][0]).toContain('Расходы за сегодня');
   });
 
   it('opens reports from commands and updates callback messages without sending a new one', async () => {

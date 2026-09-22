@@ -9,6 +9,10 @@
     respond "ok" 200
   }
 
+  handle /mini-app* {
+    reverse_proxy app:3000
+  }
+
   handle {
     respond "Euro Save backend" 200
   }
