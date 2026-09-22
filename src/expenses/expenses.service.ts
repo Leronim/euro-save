@@ -1,3 +1,4 @@
+import { resolvePending } from './pending-actions';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Category, Expense, ExpenseSource, PendingExpense, Prisma, User } from '@prisma/client';
@@ -86,41 +87,11 @@ export class ExpensesService {
   }
 
   async confirmPendingExpense(id: string) {
-    const pending = await this.prisma.pendingExpense.findUnique({
-      where: { id },
-      include: { category: true },
-    });
-    if (!pending) throw new NotFoundException('Pending expense not found');
-
-    const expense = await this.prisma.expense.create({
-      data: {
-        userId: pending.userId,
-        amount: pending.amount,
-        currency: pending.currency,
-        merchant: pending.merchant,
-        description: pending.description,
-        categoryId: pending.categoryId,
-        transactionDate: pending.transactionDate ?? new Date(),
-        source: pending.incomingBankMessageId ? ExpenseSource.ios_shortcuts : ExpenseSource.manual,
-        incomingBankMessageId: pending.incomingBankMessageId,
-      },
-      include: { category: true },
-    });
-
-    await this.prisma.pendingExpense.update({
-      where: { id },
-      data: { status: 'confirmed' },
-    });
-
-    return expense;
+    return this.prisma.$transaction(tx => resolvePending(tx, id, 'confirm'));
   }
 
   async ignorePendingExpense(id: string) {
-    return this.prisma.pendingExpense.update({
-      where: { id },
-      data: { status: 'ignored' },
-      include: { category: true },
-    });
+    return this.prisma.$transaction(tx => resolvePending(tx, id, 'ignore'));
   }
 
   async editPendingExpense(id: string, text: string) {

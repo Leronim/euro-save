@@ -202,7 +202,7 @@ The application is served at `/mini-app` by NestJS through Caddy. It has overvie
 category and operation tabs, weekly/monthly navigation, currency-specific charts,
 search within the selected period, and forms for creating/editing confirmed expenses.
 The browser uses the device timezone for date entry; report boundaries use the configured
-Nicosia timezone. No extra frontend build or database migration is required.
+Nicosia timezone. No extra frontend build is required. Database migrations run automatically at startup.
 
 Set `MINI_APP_URL` to the public HTTPS URL if moving to another host. Docker includes
 `public/mini-app`; the deploy script recreates Caddy to load updated routes.
@@ -222,3 +222,21 @@ Learned rules use MerchantRule.merchantName and take priority over default subst
 rules; seeding defaults no longer resets category choices. Names are normalized for
 case, punctuation and whitespace; ZORBAS branches share one chain key. Other names
 require a full normalized match, to avoid merging unrelated stores.
+
+## Budget, pending purchases and undo
+
+The monthly overview has a per-month, per-currency budget (0 removes it), remaining
+balance and a daily allowance through month end. Pending purchases are shown separately
+from confirmed totals and can be confirmed with a category or ignored in the Mini App.
+Chat and Mini App share an atomic pending-status transition, preventing duplicate saves.
+
+Mini App writes persist an undo record for 10 minutes. Undo restores all affected
+purchases, drafts, merchant rules and budgets in one serializable transaction, but
+refuses to overwrite records that were changed afterwards. Undo remains available
+after closing the app. Records that have expired are cleaned up on the next write.
+The new MonthlyBudget and UndoAction tables are created by the additive migration
+`20260922090000_budgets_and_undo`.
+
+Categories now expose saved merchant rules; bulk changes show the affected purchase
+count first. Day chart bars open that day's purchases. Operations are grouped by date,
+with daily totals; bank descriptions remain visible inside the edit form.

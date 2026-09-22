@@ -20,6 +20,7 @@ describe('ExpensesService', () => {
         upsert: jest.fn(),
       },
       pendingExpense: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         create: jest.fn(),
         findUnique: jest.fn(),
         update: jest.fn(),
@@ -186,8 +187,8 @@ describe('ExpensesService', () => {
       }),
       include: { category: true },
     });
-    expect(prisma.pendingExpense.update).toHaveBeenCalledWith({
-      where: { id: 'pending-1' },
+    expect(prisma.pendingExpense.updateMany).toHaveBeenCalledWith({
+      where: { id: 'pending-1', userId: 'user-1', status: { in: ['pending', 'edited'] } },
       data: { status: 'confirmed' },
     });
   });
@@ -201,13 +202,12 @@ describe('ExpensesService', () => {
 
   it('ignores pending expense', async () => {
     const { prisma, service } = createService();
-    prisma.pendingExpense.update.mockResolvedValue({ id: 'pending-1', status: 'ignored' });
+    prisma.pendingExpense.findUnique.mockResolvedValue({ id: 'pending-1', userId: 'user-1', status: 'pending' });
 
     await expect(service.ignorePendingExpense('pending-1')).resolves.toMatchObject({ status: 'ignored' });
-    expect(prisma.pendingExpense.update).toHaveBeenCalledWith({
-      where: { id: 'pending-1' },
+    expect(prisma.pendingExpense.updateMany).toHaveBeenCalledWith({
+      where: { id: 'pending-1', userId: 'user-1', status: { in: ['pending', 'edited'] } },
       data: { status: 'ignored' },
-      include: { category: true },
     });
   });
 

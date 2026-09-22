@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { ConflictException, NotFoundException, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Category, Expense, PendingExpense } from '@prisma/client';
 import dayjs from 'dayjs';
@@ -157,14 +157,24 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
 
     this.bot.action(/^expense:confirm:(.+)$/, async (ctx) => {
       const id = (ctx.match as RegExpExecArray)[1];
-      const expense = await this.expenses.confirmPendingExpense(id);
+      const expense = await this.expenses.confirmPendingExpense(id).catch(async error => {
+        if (!(error instanceof ConflictException || error instanceof NotFoundException)) throw error;
+        await ctx.answerCbQuery('Покупка уже обработана. Обновите приложение.');
+        return null;
+      });
+      if (!expense) return;
       await ctx.answerCbQuery('Записано');
       await ctx.reply(await this.formatConfirmedExpenseWithSummary(expense));
     });
 
     this.bot.action(/^expense:ignore:(.+)$/, async (ctx) => {
       const id = (ctx.match as RegExpExecArray)[1];
-      await this.expenses.ignorePendingExpense(id);
+      const ignored = await this.expenses.ignorePendingExpense(id).catch(async error => {
+        if (!(error instanceof ConflictException || error instanceof NotFoundException)) throw error;
+        await ctx.answerCbQuery('Покупка уже обработана. Обновите приложение.');
+        return null;
+      });
+      if (!ignored) return;
       await ctx.answerCbQuery('Игнорировано');
       await this.deleteCallbackMessage(ctx);
       await ctx.reply('Ок, расход проигнорирован.');

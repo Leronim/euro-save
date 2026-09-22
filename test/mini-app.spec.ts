@@ -23,7 +23,9 @@ describe('Mini App writes', () => {
   const setup = () => {
     const expenses = {saveExpenseEdit:jest.fn(),getExpense:jest.fn().mockResolvedValue({id:'expense'}),getPeriodReport:jest.fn().mockResolvedValue({})};
     const prisma = {user:{findUnique:jest.fn().mockResolvedValue({id:'owner'})},category:{findFirst:jest.fn().mockResolvedValue({id:input.categoryId})},expense:{create:jest.fn(),update:jest.fn()}};
-    return {expenses,prisma,controller:new MiniAppController(expenses as any,prisma as any)};
+    const undo = { run: jest.fn(async (_user, action) => action(prisma)) };
+    const categories = { applyMerchantCategory: jest.fn().mockResolvedValue(3) };
+    return {expenses,prisma,categories,undo,controller:new MiniAppController(expenses as any,prisma as any,undo as any,categories as any)};
   };
   it('validates amounts, dates, currency and category identifiers',async()=>{
     expect(await validate(input)).toHaveLength(0);
@@ -36,12 +38,14 @@ describe('Mini App writes', () => {
     expect(prisma.expense.create).toHaveBeenCalledWith({data:expect.objectContaining({userId:'owner',source:'manual'})});
     expect(prisma.category.findFirst).toHaveBeenCalledWith({where:expect.objectContaining({OR:[{userId:null},{userId:'owner'}]})});
   });
-  it('passes merchant-wide scope to the shared edit service, including unchanged categories', async () => {
-    const { controller, expenses } = setup();
+  it('captures merchant-wide edits for undo, with a single-operation opt-out', async () => {
+    const { controller, categories, undo } = setup();
     await controller.update({ telegramId: '123' }, 'expense', input);
-    expect(expenses.saveExpenseEdit).toHaveBeenCalledWith('expense', 'owner', expect.objectContaining({ merchant: 'LIDL' }), true);
+    expect(undo.run).toHaveBeenCalledWith('owner', expect.any(Function));
+    expect(categories.applyMerchantCategory).toHaveBeenCalledWith(expect.anything(), 'owner', 'LIDL', input.categoryId);
+    categories.applyMerchantCategory.mockClear();
     await controller.update({ telegramId: '123' }, 'expense', { ...input, applyToMerchant: false });
-    expect(expenses.saveExpenseEdit).toHaveBeenLastCalledWith('expense', 'owner', expect.anything(), false);
+    expect(categories.applyMerchantCategory).not.toHaveBeenCalled();
   });
   it('does not update someone else’s expense',async()=>{
     const {controller,prisma,expenses}=setup();expenses.getExpense.mockRejectedValue(new Error('not found'));

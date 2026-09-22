@@ -1,3 +1,4 @@
+import { UndoService } from './mini-app/undo.service';
 import { MiniAppController, MiniAppPageController } from './mini-app/mini-app.controller';
 import { TelegramAuthGuard } from './mini-app/telegram-auth.guard';
 import { Module } from '@nestjs/common';
@@ -12,7 +13,7 @@ import { TelegramModule } from './telegram/telegram.module';
 
 @Module({
   controllers: [MiniAppController, MiniAppPageController],
-  providers: [TelegramAuthGuard],
+  providers: [TelegramAuthGuard, UndoService],
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
