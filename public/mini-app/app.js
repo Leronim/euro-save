@@ -2,8 +2,8 @@
 const tg = window.Telegram?.WebApp;
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const state = { period: 'm', anchor: '', tab: 'home', currency: 'EUR', report: null, categories: [], filter: null, query: '', limit: 30, loading: false, request: 0, editId: null, overview:null, dayFilter:null, pendingOpen:false, ruleMerchant:null, savedDate:null };
-const money = value => new Intl.NumberFormat('ru-RU', {style:'currency',currency:state.currency}).format(value);
+const state = { period: 'm', anchor: '', tab: 'home', currency: 'EUR', report: null, categories: [], filter: null, query: '', limit: 30, loading: false, request: 0, editId: null, overview:null, dayFilter:null, pendingOpen:false, ruleMerchant:null, savedDate:null, historyMode:true, historyRows:[], historyFilters:{}, historyRequest:0 };
+const money = (value, currency=state.currency) => new Intl.NumberFormat('ru-RU', {style:'currency',currency}).format(value);
 const sum = rows => rows.reduce((s, row) => s + Math.round(Number(row.amount) * 100), 0) / 100;
 const dateKey = value => new Intl.DateTimeFormat('en-CA', {timeZone:state.report.range.timezone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(value));
 const labelDate = value => new Intl.DateTimeFormat('ru-RU',{timeZone:state.report.range.timezone,day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(value));
@@ -17,7 +17,7 @@ tg?.BackButton.onClick(back);
 function syncBack(){if($('editor').open || $('budget-dialog').open || $('rule-dialog').open || state.tab!=='home')tg?.BackButton.show();else tg?.BackButton.hide();}
 async function api(path, options={}){
   const response=await fetch('/api/mini-app/'+path,{...options,headers:{'Content-Type':'application/json','X-Telegram-Init-Data':tg?.initData ?? '',...options.headers}});
-  if(!response.ok){if(response.status===401)throw new Error('Откройте приложение заново кнопкой «Мои расходы» в вашем Telegram-боте.');const error=await response.json().catch(()=>({}));throw new Error(response.status===409||response.status===404?error.message:'Не удалось сохранить или загрузить данные. Попробуйте ещё раз.');}
+  if(!response.ok){if(response.status===401)throw new Error('Откройте приложение заново кнопкой «Мои расходы» в вашем Telegram-боте.');const error=await response.json().catch(()=>({}));throw new Error(response.status===400||response.status===409||response.status===404?error.message:'Не удалось сохранить или загрузить данные. Попробуйте ещё раз.');}
   return response.json();
 }
 async function load(){
@@ -41,33 +41,38 @@ function groups(rows){
   return [...map.values()].map(g=>({...g,amount:sum(g.rows)})).sort((a,b)=>b.amount-a.amount);
 }
 function categoryRows(items,total){return items.map((g,i)=>`<button class="row" data-category="${esc(g.id)}"><span class="badge">${esc(g.emoji)}</span><span class="name"><strong>${esc(g.name)}</strong><div class="progress"><i style="width:${total?g.amount/total*100:0}%;background:${colors[i%colors.length]}"></i></div></span><span class="amount">${esc(money(g.amount))}<small>${total?Math.round(g.amount/total*100):0}% · ${g.rows.length} оп.</small></span></button>`).join('');}
-function operations(rows){return rows.map(row=>`<button class="row" data-edit="${esc(row.id)}"><span class="badge">${esc(row.category?.emoji??'◌')}</span><span class="name"><strong>${esc(merchantLabel(row.merchant??row.description??'Расход'))}</strong><small>${esc(labelDate(row.transactionDate))} · ${esc(row.category?.name??'Другое')}</small></span><span class="amount">${esc(money(Number(row.amount)))}<small>Изменить ›</small></span></button>`).join('');}
+function operations(rows){return rows.map(row=>`<button class="row" data-edit="${esc(row.id)}"><span class="badge">${esc(row.category?.emoji??'◌')}</span><span class="name"><strong>${esc(merchantLabel(row.merchant??row.description??'Расход'))}</strong><small>${esc(labelDate(row.transactionDate))} · ${esc(row.category?.name??'Другое')}</small></span><span class="amount">${esc(money(Number(row.amount),row.currency))}<small>Изменить ›</small></span></button>`).join('');}
 function render(){
+  ++state.historyRequest;
   if(!state.report)return;
   const {range:r,expenses,previous}=state.report;const rows=expenses.filter(x=>x.currency===state.currency);const total=sum(rows);const old=sum(previous.filter(x=>x.currency===state.currency));const cats=groups(rows);
   $('title').textContent={home:'Обзор расходов',categories:'По категориям',operations:'Все операции'}[state.tab];
   $('period-label').textContent=periodLabel();$('next').disabled=r.active;$('current').hidden=r.active;
   document.querySelectorAll('[data-tab]').forEach(b=>{b.classList.toggle('active',b.dataset.tab===state.tab);b.setAttribute('aria-current',b.dataset.tab===state.tab?'page':'false');});
   document.querySelectorAll('[data-period]').forEach(b=>b.classList.toggle('selected',b.dataset.period===state.period));
+  $('controls').hidden=state.tab==='operations'&&state.historyMode;
   syncBack();renderNotice();
   if(state.tab==='home'){
     const change=old?`${total<old?'↓':total>old?'↑':'→'} ${Math.abs((total-old)/old*100).toFixed(0)}% к прошлому периоду`:'Нет расходов для сравнения';
     const start=new Date(r.start);const first=dateKey(start);const days=Array.from({length:r.elapsed},(_,i)=>{const d=new Date(first+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+i);const key=d.toISOString().slice(0,10);return {key,amount:sum(rows.filter(row=>dateKey(row.transactionDate)===key))};});const max=Math.max(...days.map(d=>d.amount),1);
     $('content').innerHTML=`<section class="card hero"><small>${r.active?'Потрачено к этому моменту':'Всего за период'}</small><div class="total">${esc(money(total))}</div><div class="comparison">${esc(change)}</div>${budgetSummary(total)}<p class="note">${r.active?'Сравнение с тем же отрезком прошлого периода.':'Сравнение с полным предыдущим периодом.'} Только подтверждённые расходы.${comparisonReason(rows,previous.filter(x=>x.currency===state.currency))}</p></section>${pendingSummary()}<div class="metrics"><div class="metric"><small>В среднем за день</small><strong>${esc(money(total/r.elapsed))}</strong></div><div class="metric"><small>Операций за период</small><strong>${rows.length}</strong></div></div><section class="card"><div class="section-title"><h2>Ритм расходов</h2><small>По дням</small></div><div class="chart">${days.map(d=>`<button class="bar" style="height:${Math.max(3,d.amount/max*100)}%" data-day="${esc(d.key)}" aria-label="${esc(d.key+': '+money(d.amount))}"></button>`).join('')}</div><div class="axis"><span>${first.slice(8)}.${first.slice(5,7)}</span><span>${days.at(-1).key.slice(8)}.${days.at(-1).key.slice(5,7)}</span></div><p id="chart-note" class="chart-note">Нажмите на день, чтобы открыть покупки</p></section>${state.period==='m'&&r.active&&r.elapsed>=3?`<p class="muted">Прогноз к концу месяца: ≈ ${esc(money(total/r.elapsed*r.days))}<br>По среднему расходу за день, без учёта будущих покупок.</p>`:''}<section class="card"><div class="section-title"><h2>На что уходит</h2><button class="text-button" data-go="categories">Все ›</button></div>${cats.length?categoryRows(cats.slice(0,3),total):empty('Добавьте первую покупку кнопкой сверху.')}</section>`;
-    document.querySelectorAll('[data-day]').forEach(b=>b.onclick=()=>{state.dayFilter=b.dataset.day;state.filter=null;state.tab='operations';state.query='';render();});
+    document.querySelectorAll('[data-day]').forEach(b=>b.onclick=()=>{state.dayFilter=b.dataset.day;state.filter=null;state.tab='operations';state.historyMode=false;state.query='';render();});
   }else if(state.tab==='categories'){
     let offset=0;const gradient=cats.map((g,i)=>{const start=offset;offset+=total?g.amount/total*100:0;return `${colors[i%colors.length]} ${start}% ${offset}%`;}).join(',');
     $('content').innerHTML=`<section class="card">${cats.length?`<div class="donut" role="img" aria-label="Распределение расходов по категориям" style="background:conic-gradient(${gradient})"><div><strong>${cats.length}</strong><small>категорий</small></div></div>${categoryRows(cats,total)}`:empty('Здесь появятся категории ваших покупок.')}</section><p class="muted">Нажмите на категорию, чтобы посмотреть покупки.</p>${rulesSummary()}`;
+  }else if(state.historyMode){
+    renderHistory();
   }else{
-    $('content').innerHTML=`<input class="search" id="search" type="search" placeholder="Найти магазин или описание" aria-label="Поиск операций" value="${esc(state.query)}">${state.filter||state.dayFilter?`<div class="filter"><span>${esc(state.dayFilter?dayLabel(state.dayFilter):cats.find(c=>c.id===state.filter)?.name??'Категория')}</span><button class="quiet" id="clear-filter">Сбросить ✕</button></div>`:''}<div class="card" id="operation-list"></div>`;
+    $('content').innerHTML=`<button class="text-button" id="all-history">Вся история и фильтры →</button><input class="search" id="search" type="search" placeholder="Найти магазин или описание" aria-label="Поиск операций" value="${esc(state.query)}">${state.filter||state.dayFilter?`<div class="filter"><span>${esc(state.dayFilter?dayLabel(state.dayFilter):cats.find(c=>c.id===state.filter)?.name??'Категория')}</span><button class="quiet" id="clear-filter">Сбросить ✕</button></div>`:''}<div class="card" id="operation-list"></div>`;
+    $('all-history').onclick=()=>{state.historyMode=true;render();};
     const list=()=>{const matches=rows.filter(row=>(!state.dayFilter||dateKey(row.transactionDate)===state.dayFilter)&&(!state.filter||(row.categoryId??'none')===state.filter)&&`${row.merchant??''} ${row.description??''}`.toLocaleLowerCase().includes(state.query.toLocaleLowerCase()));$('operation-list').innerHTML=matches.length?groupedOperations(matches.slice(0,state.limit),matches)+(matches.length>state.limit?'<button class="more" id="more">Показать ещё</button>':''):'<div class="empty"><strong>Ничего не найдено</strong>Измените поиск, категорию или период.</div>';wireRows();if($('more'))$('more').onclick=()=>{state.limit+=30;list();};};
     $('search').oninput=e=>{state.query=e.target.value;state.limit=30;list();};if($('clear-filter'))$('clear-filter').onclick=()=>{state.filter=null;state.dayFilter=null;render();};list();
   }
   wireExtras();wireRows();document.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.go;render();});
 }
-function wireRows(){document.querySelectorAll('[data-category]').forEach(b=>b.onclick=()=>{state.dayFilter=null;state.filter=b.dataset.category;state.tab='operations';state.query='';state.limit=30;render();});document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openEditor(state.report.expenses.find(r=>r.id===b.dataset.edit)));}
+function wireRows(){document.querySelectorAll('[data-category]').forEach(b=>b.onclick=()=>{state.dayFilter=null;state.filter=b.dataset.category;state.tab='operations';state.historyMode=false;state.query='';state.limit=30;render();});document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openEditor((state.tab==='operations'&&state.historyMode?state.historyRows:state.report.expenses).find(r=>r.id===b.dataset.edit)));}
 function openEditor(row){
-  const f=$('expense-form');state.editId=row?.id??null;$('editor-title').textContent=row?'Изменить расход':'Новый расход';f.reset();$('merchant-scope').hidden=!row;
+  $('delete-expense').hidden=!row;const f=$('expense-form');state.editId=row?.id??null;$('editor-title').textContent=row?'Изменить расход':'Новый расход';f.reset();$('merchant-scope').hidden=!row;
   f.elements.categoryId.innerHTML=state.categories.map(c=>`<option value="${esc(c.id)}">${esc(c.emoji??'')} ${esc(c.name)}</option>`).join('');
   f.elements.merchant.value=row?.merchant??row?.description??'';f.elements.amount.value=row?Number(row.amount):'';f.elements.currency.value=row?.currency??state.currency;
   if(row?.categoryId)f.elements.categoryId.value=row.categoryId;
@@ -77,17 +82,17 @@ function openEditor(row){
 }
 $('expense-form').onsubmit=async event=>{
   event.preventDefault();const f=event.target;const input={merchant:f.elements.merchant.value.trim(),amount:Number(f.elements.amount.value),currency:f.elements.currency.value.toUpperCase(),categoryId:f.elements.categoryId.value,applyToMerchant:!!state.editId&&f.elements.applyToMerchant.checked,transactionDate:new Date(f.elements.transactionDate.value).toISOString()};
-  $('save').disabled=true;$('dismiss').disabled=true;$('form-error').textContent='';
+  $('save').disabled=true;$('delete-expense').disabled=true;$('dismiss').disabled=true;$('form-error').textContent='';
   try{if(input.applyToMerchant&&!await approveMerchant(input.merchant))return;const saved=await api('expenses'+(state.editId?'/'+state.editId:''),{method:state.editId?'PATCH':'POST',body:JSON.stringify(input)});$('editor').close();tg?.HapticFeedback.notificationOccurred('success');state.savedDate=input.transactionDate;await load();}
   catch(error){$('form-error').textContent=error.message;}
-  finally{$('save').disabled=false;$('dismiss').disabled=false;syncBack();}
+  finally{$('save').disabled=false;$('delete-expense').disabled=false;$('dismiss').disabled=false;syncBack();}
 };
 $('editor').addEventListener('cancel',e=>{if($('save').disabled)e.preventDefault();});$('editor').addEventListener('close',syncBack);
 $('dismiss').onclick=()=>$('editor').close();$('add').onclick=()=>openEditor();$('retry').onclick=load;
 $('currency').onchange=e=>{state.currency=e.target.value;render();};
 $('prev').onclick=()=>{state.dayFilter=null;state.anchor=state.report.range.previousAnchor;load();};$('next').onclick=()=>{state.dayFilter=null;state.anchor=state.report.range.nextAnchor;load();};$('current').onclick=()=>{state.dayFilter=null;state.anchor='';load();};
 document.querySelectorAll('[data-period]').forEach(b=>b.onclick=()=>{state.period=b.dataset.period;state.anchor='';state.dayFilter=null;state.limit=30;load();});
-document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab;state.filter=null;state.dayFilter=null;state.limit=30;render();});
+document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab;state.historyMode=true;state.filter=null;state.dayFilter=null;state.limit=30;render();});
 load();
 
 function merchantLabel(name){if(/\bzorba['’]?s\b/i.test(name))return 'Zorbas';if(/^lidl\b/i.test(name))return 'Lidl';return name;}
@@ -113,3 +118,43 @@ $('budget-form').onsubmit=e=>{e.preventDefault();saveModal(e.target,()=>api('bud
 $('rule-form').onsubmit=e=>{e.preventDefault();saveModal(e.target,async()=>{if(!await approveMerchant(state.ruleMerchant))return;await api('rules',{method:'POST',body:JSON.stringify({merchant:state.ruleMerchant,categoryId:e.target.elements.categoryId.value})});},'rule-dialog');};
 document.querySelectorAll('[data-dismiss]').forEach(button=>button.onclick=()=>{$(button.dataset.dismiss).close();syncBack();});
 for(const id of ['budget-dialog','rule-dialog']){$(id).addEventListener('close',syncBack);$(id).addEventListener('cancel',e=>{if($(id).querySelector('button[type="submit"]').disabled)e.preventDefault();});}
+
+function renderHistory(){
+  const f=state.historyFilters;
+  const field=(name,label,type='text')=>`<label>${label}<input name="${name}" type="${type}" value="${esc(f[name]??'')}" ${type==='number'?'min="0" max="9999999999.99" step="0.01" inputmode="decimal"':''} ${type==='text'?'maxlength="200"':''}></label>`;
+  const count=Object.values(f).filter(Boolean).length;
+  $('content').innerHTML=`<p class="muted">${f.from||f.to?`Период: ${esc(f.from??'')||'с начала истории'} — ${esc(f.to??'')||'без верхней границы'}`:'История за все месяцы. Даты можно ограничить в фильтрах.'}</p><input class="search" id="history-search" type="search" maxlength="200" placeholder="Поиск по всей истории" aria-label="Поиск по всей истории" value="${esc(state.query)}"><details class="card history-filters"><summary>Фильтры${count?' · '+count:''}</summary><form id="history-form"><div class="form-grid">${field('from','С даты','date')}${field('to','По дату включительно','date')}</div>${field('merchant','Магазин содержит')}<label>Категория<select name="category"><option value="">Все категории</option><option value="none" ${f.category==='none'?'selected':''}>Без категории</option>${categoryOptions(f.category)}</select></label><label>Валюта<select name="currency" id="history-currency"><option value="">Все валюты</option>${[...new Set(['EUR',f.currency].filter(Boolean))].map(c=>`<option ${f.currency===c?'selected':''}>${esc(c)}</option>`).join('')}</select></label><div class="form-grid">${field('min','Сумма от','number')}${field('max','Сумма до','number')}</div><p class="muted">Суммы сравниваются в валюте каждой операции.</p><div class="pending-actions"><button type="submit" class="primary">Применить</button><button type="button" id="history-reset">Сбросить</button></div></form></details><p id="history-summary" class="muted" role="status"></p><section class="card" id="history-list"></section>`;
+  $('history-form').elements.category.value=f.category??'';
+  $('history-form').onsubmit=e=>{e.preventDefault();state.historyFilters=Object.fromEntries(new FormData(e.target));render();};
+  $('history-reset').onclick=()=>{state.historyFilters={};state.query='';render();};
+  let timer;
+  $('history-search').oninput=e=>{state.query=e.target.value;clearTimeout(timer);++state.historyRequest;timer=setTimeout(()=>{if(state.tab==='operations'&&state.historyMode)loadHistory();},300);};
+  loadHistory();
+}
+async function loadHistory(offset=0){
+  const request=++state.historyRequest;
+  const list=$('history-list'),summary=$('history-summary');
+  if(!list)return;
+  if(!offset){state.historyRows=[];list.innerHTML='';}
+  if($('history-more'))$('history-more').disabled=true;
+  summary.textContent='Загружаем историю…';
+  try{
+    const result=await api('history?'+new URLSearchParams({...state.historyFilters,q:state.query,offset:String(offset)}));
+    if(request!==state.historyRequest)return;
+    state.historyRows=offset?[...state.historyRows,...result.rows]:result.rows;
+    summary.textContent=`Найдено: ${result.total} · `+(result.totals.map(t=>money(Number(t.amount),t.currency)).join(' + ')||'Нет расходов');
+    const select=$('history-currency'),selected=select.value;
+    select.innerHTML='<option value="">Все валюты</option>'+[...new Set(['EUR',...result.currencies,selected].filter(Boolean))].sort().map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');select.value=selected;
+    let last='';
+    list.innerHTML=state.historyRows.length?state.historyRows.map(row=>{const key=dateKey(row.transactionDate);const heading=key!==last?`<div class="day-heading"><strong>${esc(dayLabel(key))}</strong></div>`:'';last=key;return heading+operations([row]);}).join(''):'<div class="empty"><strong>Ничего не найдено</strong>Измените поиск или сбросьте фильтры.</div>';
+    if(result.nextOffset!==null){list.insertAdjacentHTML('beforeend','<button class="more" id="history-more">Показать ещё</button>');$('history-more').onclick=()=>loadHistory(result.nextOffset);}
+    wireRows();
+  }catch(error){if(request!==state.historyRequest)return;summary.textContent=error.message;list.insertAdjacentHTML('beforeend','<button class="more" id="history-retry">Попробовать снова</button>');$('history-retry').onclick=()=>{$('history-retry').remove();loadHistory(offset);};}
+}
+$('delete-expense').onclick=async()=>{
+  if(!state.editId)return;
+  const buttons=[$('save'),$('dismiss'),$('delete-expense')];buttons.forEach(b=>b.disabled=true);$('form-error').textContent='';
+  try{await api('expenses/'+state.editId,{method:'DELETE'});$('editor').close();state.savedDate=null;tg?.HapticFeedback.notificationOccurred('success');await load();}
+  catch(error){$('form-error').textContent=error.message;}
+  finally{buttons.forEach(b=>b.disabled=false);syncBack();}
+};

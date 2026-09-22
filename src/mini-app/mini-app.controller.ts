@@ -1,9 +1,10 @@
 import dayjs from 'dayjs';
+import { historyQuery } from './history-query';
 import { CategoriesService } from '../categories/categories.service';
 import { merchantKey } from '../categories/merchant-key';
 import { resolvePending } from '../expenses/pending-actions';
 import { UndoService } from './undo.service';
-import { BadRequestException, Body, Controller, Get, Header, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, NotFoundException, Get, Header, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { IsIn, IsBoolean, IsOptional, IsDateString, IsNumber, IsString, IsUUID, Length, Matches, Max, Min } from 'class-validator';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -58,6 +59,27 @@ export class MiniAppController {
     const user = await this.user(req.telegramId);
     try { return await this.expenses.getPeriodReport(user.id, period as 'w' | 'm', anchor); }
     catch (error) { if (error instanceof Error && error.message === 'Invalid report date') throw new BadRequestException(error.message); throw error; }
+  }
+  @Get('history') @Header('Cache-Control', 'no-store')
+  async history(@Req() req: { telegramId: string }, @Query() query: Record<string, string>) {
+    const user = await this.user(req.telegramId);
+    const { where, skip } = historyQuery(user.id, query, user.timezone);
+    return this.prisma.$transaction(async tx => {
+      const rows = await tx.expense.findMany({ where, skip, take: 31, include: { category: true }, orderBy: [{ transactionDate: 'desc' }, { id: 'desc' }] });
+      const total = await tx.expense.count({ where });
+      const totals = await tx.expense.groupBy({ by: ['currency'], where, _sum: { amount: true } });
+      const currencies = await tx.expense.findMany({ where: { userId: user.id }, distinct: ['currency'], select: { currency: true }, orderBy: { currency: 'asc' } });
+      return { rows: rows.slice(0, 30), total, totals: totals.map(t => ({ currency: t.currency, amount: t._sum.amount })), currencies: currencies.map(c => c.currency), nextOffset: rows.length > 30 ? skip + 30 : null };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+  }
+  @Delete('expenses/:id')
+  async remove(@Req() req: { telegramId: string }, @Param('id') id: string) {
+    const user = await this.user(req.telegramId);
+    return this.undo.run(user.id, async tx => {
+      const result = await tx.expense.deleteMany({ where: { id, userId: user.id } });
+      if (!result.count) throw new NotFoundException('Расход не найден');
+      return { ok: true };
+    });
   }
   @Get('categories') @Header('Cache-Control', 'no-store')
   async categories(@Req() req: { telegramId: string }) {

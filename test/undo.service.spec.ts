@@ -24,6 +24,15 @@ function setup() {
 }
 
 describe('persistent undo', () => {
+  it('restores a deleted expense with its original ID, amount, date and category', async () => {
+    const { data, tx, service } = setup();
+    const row = { id: 'deleted', userId: 'u', amount: '12.50', categoryId: 'food', transactionDate: '2025-01-01T10:00:00.000Z' };
+    data.expense.push(row);
+    const action = await service.run('u', async () => { await tx.expense.deleteMany({ where: { id: row.id, userId: 'u' } }); return {}; });
+    expect(data.expense).toEqual([]);
+    await service.undo('u', action.undoId!);
+    expect(data.expense).toEqual([row]);
+  });
   it('restores a bulk category change and rule, removes new expenses, and is single-use', async () => {
     const { data, service } = setup();
     data.expense.push({ id: 'one', userId: 'u', categoryId: 'old' }, { id: 'two', userId: 'u', categoryId: 'old' });

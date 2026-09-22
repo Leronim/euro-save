@@ -22,11 +22,19 @@ describe('Mini App writes', () => {
   const input = Object.assign(new ExpenseInput(), { merchant:'LIDL', amount:12.5, currency:'EUR', categoryId:'a0b5d4b7-c40b-4b31-86c2-52d0e6356300', transactionDate:'2026-09-22T10:00:00Z' });
   const setup = () => {
     const expenses = {saveExpenseEdit:jest.fn(),getExpense:jest.fn().mockResolvedValue({id:'expense'}),getPeriodReport:jest.fn().mockResolvedValue({})};
-    const prisma = {user:{findUnique:jest.fn().mockResolvedValue({id:'owner'})},category:{findFirst:jest.fn().mockResolvedValue({id:input.categoryId})},expense:{create:jest.fn(),update:jest.fn()}};
+    const prisma = {user:{findUnique:jest.fn().mockResolvedValue({id:'owner'})},category:{findFirst:jest.fn().mockResolvedValue({id:input.categoryId})},expense:{create:jest.fn(),update:jest.fn(),deleteMany:jest.fn().mockResolvedValue({count:1})}};
     const undo = { run: jest.fn(async (_user, action) => action(prisma)) };
     const categories = { applyMerchantCategory: jest.fn().mockResolvedValue(3) };
     return {expenses,prisma,categories,undo,controller:new MiniAppController(expenses as any,prisma as any,undo as any,categories as any)};
   };
+  it('deletes only an owned expense through undo and rejects missing or foreign IDs', async () => {
+    const { controller, prisma, undo } = setup();
+    await controller.remove({ telegramId: '123' }, 'expense');
+    expect(undo.run).toHaveBeenCalledWith('owner', expect.any(Function));
+    expect(prisma.expense.deleteMany).toHaveBeenCalledWith({ where: { id: 'expense', userId: 'owner' } });
+    prisma.expense.deleteMany.mockResolvedValue({ count: 0 });
+    await expect(controller.remove({ telegramId: '123' }, 'foreign')).rejects.toThrow('Расход не найден');
+  });
   it('validates amounts, dates, currency and category identifiers',async()=>{
     expect(await validate(input)).toHaveLength(0);
     for(const values of [{amount:-1},{amount:1.123},{merchant:''},{currency:'<>'},{categoryId:'foreign'},{transactionDate:'2026-02-31'}]) {
