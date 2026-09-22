@@ -23,5 +23,15 @@ export function salaryResult(salary: number, background: number, spent: number, 
   const available = cents(salary) - cents(background);
   const remaining = (available - cents(spent)) / 100;
   const projectedExpenses = elapsed >= 3 && count > 0 ? Math.round(cents(spent) / elapsed * days) / 100 : null;
-  return { background, spent, remaining, projectedExpenses, projectedSavings: projectedExpenses === null ? null : (available - cents(projectedExpenses)) / 100 };
+  const remainingDays = Math.max(1, days - elapsed + 1);
+  const targets = [500, 1000, 1500].map(target => {
+    const budget = available - cents(target);
+    const left = budget - cents(spent);
+    return {
+      target, periodBudget: budget / 100, remainingBudget: Math.max(0, left) / 100,
+      dailyLimit: Math.floor(Math.max(0, left) / remainingDays) / 100,
+      shortfall: Math.max(0, -left) / 100, achievable: left >= 0,
+    };
+  });
+  return { remainingDays, targets, background, spent, remaining, projectedExpenses, projectedSavings: projectedExpenses === null ? null : (available - cents(projectedExpenses)) / 100 };
 }

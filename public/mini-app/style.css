@@ -8,3 +8,5 @@
 .danger{color:#c44040;background:transparent;border:1px solid currentColor;width:100%;margin-top:12px;padding:12px;border-radius:12px}.history-filters summary{cursor:pointer;font-weight:600;padding:4px 0}.history-filters form{margin-top:16px}.history-filters input{min-width:0;width:100%;box-sizing:border-box}
 
 .background-row{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr) 32px;gap:8px;align-items:end}.background-row input{width:100%;min-width:0;box-sizing:border-box}.background-row button{margin-bottom:18px}.salary-line{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid #8882}.salary-line strong{white-space:nowrap}nav button{min-width:0}
+
+.savings-target{border:1px solid var(--line);border-radius:16px;padding:16px;margin-top:12px}.savings-target h3{font-size:16px;margin:0 0 12px}.target-daily{font-size:25px;color:var(--accent)}.target-daily small{font-size:13px;font-weight:400}.savings-target p{font-size:13px;line-height:1.5}.target-warning{color:var(--danger)}
