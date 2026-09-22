@@ -21,7 +21,7 @@ describe('Mini App authentication', () => {
 describe('Mini App writes', () => {
   const input = Object.assign(new ExpenseInput(), { merchant:'LIDL', amount:12.5, currency:'EUR', categoryId:'a0b5d4b7-c40b-4b31-86c2-52d0e6356300', transactionDate:'2026-09-22T10:00:00Z' });
   const setup = () => {
-    const expenses = {getExpense:jest.fn().mockResolvedValue({id:'expense'}),getPeriodReport:jest.fn().mockResolvedValue({})};
+    const expenses = {saveExpenseEdit:jest.fn(),getExpense:jest.fn().mockResolvedValue({id:'expense'}),getPeriodReport:jest.fn().mockResolvedValue({})};
     const prisma = {user:{findUnique:jest.fn().mockResolvedValue({id:'owner'})},category:{findFirst:jest.fn().mockResolvedValue({id:input.categoryId})},expense:{create:jest.fn(),update:jest.fn()}};
     return {expenses,prisma,controller:new MiniAppController(expenses as any,prisma as any)};
   };
@@ -35,6 +35,13 @@ describe('Mini App writes', () => {
     const {controller,prisma}=setup();await controller.create({telegramId:'123'},input);
     expect(prisma.expense.create).toHaveBeenCalledWith({data:expect.objectContaining({userId:'owner',source:'manual'})});
     expect(prisma.category.findFirst).toHaveBeenCalledWith({where:expect.objectContaining({OR:[{userId:null},{userId:'owner'}]})});
+  });
+  it('passes merchant-wide scope to the shared edit service, including unchanged categories', async () => {
+    const { controller, expenses } = setup();
+    await controller.update({ telegramId: '123' }, 'expense', input);
+    expect(expenses.saveExpenseEdit).toHaveBeenCalledWith('expense', 'owner', expect.objectContaining({ merchant: 'LIDL' }), true);
+    await controller.update({ telegramId: '123' }, 'expense', { ...input, applyToMerchant: false });
+    expect(expenses.saveExpenseEdit).toHaveBeenLastCalledWith('expense', 'owner', expect.anything(), false);
   });
   it('does not update someone else’s expense',async()=>{
     const {controller,prisma,expenses}=setup();expenses.getExpense.mockRejectedValue(new Error('not found'));

@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, Get, Header, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
-import { IsDateString, IsNumber, IsString, IsUUID, Length, Matches, Max, Min } from 'class-validator';
+import { IsBoolean, IsOptional, IsDateString, IsNumber, IsString, IsUUID, Length, Matches, Max, Min } from 'class-validator';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Prisma } from '@prisma/client';
@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TelegramAuthGuard } from './telegram-auth.guard';
 
 export class ExpenseInput {
+  @IsOptional() @IsBoolean() applyToMerchant?: boolean;
   @IsString() @Length(1, 120) merchant!: string;
   @IsNumber({ maxDecimalPlaces: 2, allowInfinity: false, allowNaN: false }) @Min(0.01) @Max(9999999999.99) amount!: number;
   @Matches(/^[A-Z]{3}$/) currency!: string;
@@ -47,7 +48,8 @@ export class MiniAppController {
   private async data(input: ExpenseInput, userId: string) {
     const category = await this.prisma.category.findFirst({ where: { id: input.categoryId, type: 'expense', OR: [{ userId: null }, { userId }] } });
     if (!category || !input.merchant.trim() || !/(Z|[+-]\d{2}:\d{2})$/.test(input.transactionDate)) throw new BadRequestException('Invalid expense');
-    return { ...input, merchant: input.merchant.trim(), amount: new Prisma.Decimal(input.amount), transactionDate: new Date(input.transactionDate) };
+    const { applyToMerchant, ...fields } = input;
+    return { ...fields, merchant: input.merchant.trim(), amount: new Prisma.Decimal(input.amount), transactionDate: new Date(input.transactionDate) };
   }
   @Post('expenses')
   async create(@Req() req: { telegramId: string }, @Body() input: ExpenseInput) {
@@ -58,6 +60,6 @@ export class MiniAppController {
   async update(@Req() req: { telegramId: string }, @Param('id') id: string, @Body() input: ExpenseInput) {
     const user = await this.user(req.telegramId);
     await this.expenses.getExpense(id, user.id);
-    return this.prisma.expense.update({ where: { id }, data: await this.data(input, user.id) });
+    return this.expenses.saveExpenseEdit(id, user.id, await this.data(input, user.id), input.applyToMerchant ?? true);
   }
 }

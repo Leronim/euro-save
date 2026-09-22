@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { Category } from '@prisma/client';
+import { BadRequestException } from '@nestjs/common';
+import { merchantKey } from './merchant-key';
+import { Category, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { DEFAULT_CATEGORIES, DEFAULT_MERCHANT_RULES } from './default-rules';
 
@@ -32,7 +34,7 @@ export class CategoriesService {
             pattern: rule.pattern,
           },
         },
-        update: { categoryId: category.id },
+        update: {},
         create: {
           userId,
           pattern: rule.pattern,
@@ -51,9 +53,33 @@ export class CategoriesService {
       orderBy: { pattern: 'desc' },
     });
     const normalized = merchant.toLowerCase();
-    const match = rules.find((rule) => normalized.includes(rule.pattern.toLowerCase()));
+    const learned = rules.find(rule => rule.merchantName && merchantKey(rule.merchantName) === merchantKey(merchant));
+    const match = learned ?? rules.find((rule) => !rule.merchantName && normalized.includes(rule.pattern.toLowerCase()));
 
     return match?.category ?? this.getFallbackCategory();
+  }
+
+  async applyMerchantCategory(tx: Prisma.TransactionClient, userId: string, merchant: string, categoryId: string) {
+    const key = merchantKey(merchant);
+    if (!key) throw new BadRequestException('Merchant is required');
+    const category = await tx.category.findFirst({
+      where: { id: categoryId, type: 'expense', OR: [{ userId: null }, { userId }] },
+    });
+    if (!category) throw new BadRequestException('Invalid category');
+    await tx.merchantRule.upsert({
+      where: { userId_pattern: { userId, pattern: key } },
+      update: { categoryId, merchantName: merchant.trim() },
+      create: { userId, pattern: key, categoryId, merchantName: merchant.trim() },
+    });
+    const [expenses, pending] = await Promise.all([
+      tx.expense.findMany({ where: { userId }, select: { id: true, merchant: true } }),
+      tx.pendingExpense.findMany({ where: { userId, status: { in: ['pending', 'edited'] } }, select: { id: true, merchant: true } }),
+    ]);
+    const ids = expenses.filter(row => merchantKey(row.merchant) === key).map(row => row.id);
+    const pendingIds = pending.filter(row => merchantKey(row.merchant) === key).map(row => row.id);
+    const result = await tx.expense.updateMany({ where: { userId, id: { in: ids } }, data: { categoryId } });
+    await tx.pendingExpense.updateMany({ where: { userId, id: { in: pendingIds }, status: { in: ['pending', 'edited'] } }, data: { categoryId } });
+    return result.count;
   }
 
   async findSystemCategoryByName(name: string): Promise<Category> {

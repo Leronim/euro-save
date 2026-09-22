@@ -65,7 +65,7 @@ function render(){
 }
 function wireRows(){document.querySelectorAll('[data-category]').forEach(b=>b.onclick=()=>{state.filter=b.dataset.category;state.tab='operations';state.query='';state.limit=30;render();});document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openEditor(state.report.expenses.find(r=>r.id===b.dataset.edit)));}
 function openEditor(row){
-  const f=$('expense-form');state.editId=row?.id??null;$('editor-title').textContent=row?'Изменить расход':'Новый расход';f.reset();
+  const f=$('expense-form');state.editId=row?.id??null;$('editor-title').textContent=row?'Изменить расход':'Новый расход';f.reset();$('merchant-scope').hidden=!row;
   f.elements.categoryId.innerHTML=state.categories.map(c=>`<option value="${esc(c.id)}">${esc(c.emoji??'')} ${esc(c.name)}</option>`).join('');
   f.elements.merchant.value=row?.merchant??row?.description??'';f.elements.amount.value=row?Number(row.amount):'';f.elements.currency.value=row?.currency??state.currency;
   if(row?.categoryId)f.elements.categoryId.value=row.categoryId;
@@ -73,9 +73,9 @@ function openEditor(row){
   $('form-error').textContent='';$('editor').showModal();syncBack();
 }
 $('expense-form').onsubmit=async event=>{
-  event.preventDefault();const f=event.target;const input={merchant:f.elements.merchant.value.trim(),amount:Number(f.elements.amount.value),currency:f.elements.currency.value.toUpperCase(),categoryId:f.elements.categoryId.value,transactionDate:new Date(f.elements.transactionDate.value).toISOString()};
+  event.preventDefault();const f=event.target;const input={merchant:f.elements.merchant.value.trim(),amount:Number(f.elements.amount.value),currency:f.elements.currency.value.toUpperCase(),categoryId:f.elements.categoryId.value,applyToMerchant:!!state.editId&&f.elements.applyToMerchant.checked,transactionDate:new Date(f.elements.transactionDate.value).toISOString()};
   $('save').disabled=true;$('dismiss').disabled=true;$('form-error').textContent='';
-  try{await api('expenses'+(state.editId?'/'+state.editId:''),{method:state.editId?'PATCH':'POST',body:JSON.stringify(input)});$('editor').close();tg?.HapticFeedback.notificationOccurred('success');await load();}
+  try{const saved=await api('expenses'+(state.editId?'/'+state.editId:''),{method:state.editId?'PATCH':'POST',body:JSON.stringify(input)});$('editor').close();tg?.HapticFeedback.notificationOccurred('success');await load();if(input.applyToMerchant&&$('status').hidden){$('status').hidden=false;$('status').textContent=`Категория применена к ${saved.affectedExpenses} покупкам магазина и сохранена для будущих расходов.`;}}
   catch(error){$('form-error').textContent=error.message;}
   finally{$('save').disabled=false;$('dismiss').disabled=false;syncBack();}
 };

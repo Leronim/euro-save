@@ -14,6 +14,8 @@ describe('ExpensesService', () => {
 
   const createService = () => {
     const prisma = {
+      $transaction: jest.fn(),
+      category: { findFirst: jest.fn().mockResolvedValue({ id: "cat-2" }) },
       user: {
         upsert: jest.fn(),
       },
@@ -30,6 +32,7 @@ describe('ExpensesService', () => {
         delete: jest.fn(),
       },
     };
+    prisma.$transaction.mockImplementation(callback => callback(prisma));
     const config = {
       get: jest.fn((key: string, fallback?: string) => {
         const values: Record<string, string> = {
@@ -41,6 +44,7 @@ describe('ExpensesService', () => {
       }),
     };
     const categories = {
+      applyMerchantCategory: jest.fn().mockResolvedValue(4),
       ensureDefaultMerchantRules: jest.fn(),
       categorizeMerchant: jest.fn(),
       formatCategory: jest.fn((cat?: { emoji?: string; name?: string } | null) =>
@@ -333,6 +337,18 @@ describe('ExpensesService', () => {
 
     await expect(service.deleteLatestExpense('user-1')).resolves.toMatchObject({ id: 'expense-1' });
     expect(prisma.expense.delete).toHaveBeenCalledWith({ where: { id: 'expense-1' } });
+  });
+
+  it('applies a Mini App edit and merchant rule in one transaction, with an opt-out', async () => {
+    const { prisma, service, categories } = createService();
+    prisma.expense.findFirst.mockResolvedValue({ id: 'expense-1', userId: 'user-1' });
+    prisma.expense.update.mockResolvedValue({ id: 'expense-1' });
+    const data = { merchant: 'ZORBAS', amount: new Prisma.Decimal(5), currency: 'EUR', categoryId: 'cat-2', transactionDate: new Date() };
+    expect(await service.saveExpenseEdit('expense-1', 'user-1', data, true)).toMatchObject({ affectedExpenses: 4 });
+    expect(categories.applyMerchantCategory).toHaveBeenCalledWith(prisma, 'user-1', 'ZORBAS', 'cat-2');
+    categories.applyMerchantCategory.mockClear();
+    await service.saveExpenseEdit('expense-1', 'user-1', data, false);
+    expect(categories.applyMerchantCategory).not.toHaveBeenCalled();
   });
 
   it('updates expense category', async () => {

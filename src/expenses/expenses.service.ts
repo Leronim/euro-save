@@ -368,12 +368,28 @@ export class ExpensesService {
     });
   }
 
-  async updateExpenseCategory(id: string, userId: string, categoryId: string) {
+  async saveExpenseEdit(id: string, userId: string, data: {
+    merchant: string; amount: Prisma.Decimal; currency: string; categoryId: string; transactionDate: Date;
+  }, applyToMerchant: boolean) {
     await this.getExpense(id, userId);
-    return this.prisma.expense.update({
-      where: { id },
-      data: { categoryId },
-      include: { category: true },
+    return this.prisma.$transaction(async tx => {
+      const expense = await tx.expense.update({ where: { id }, data });
+      const affectedExpenses = applyToMerchant
+        ? await this.categories.applyMerchantCategory(tx, userId, data.merchant, data.categoryId) : 1;
+      return { ...expense, affectedExpenses };
+    });
+  }
+
+  async updateExpenseCategory(id: string, userId: string, categoryId: string) {
+    const expense = await this.getExpense(id, userId);
+    return this.prisma.$transaction(async tx => {
+      if (expense.merchant?.trim()) {
+        await this.categories.applyMerchantCategory(tx, userId, expense.merchant, categoryId);
+      } else {
+        const category = await tx.category.findFirst({ where: { id: categoryId, type: 'expense', OR: [{ userId: null }, { userId }] } });
+        if (!category) throw new BadRequestException('Invalid category');
+      }
+      return tx.expense.update({ where: { id }, data: { categoryId }, include: { category: true } });
     });
   }
 

@@ -211,3 +211,14 @@ Every `/api/mini-app` request requires `X-Telegram-Init-Data`: server-side HMAC
 validation, maximum age 24 hours and the configured `TELEGRAM_OWNER_ID` are checked.
 No credentials or expenses are saved to browser storage. Opening the URL in a normal
 browser displays an instruction to open it from Telegram, without exposing expenses.
+
+### Merchant categories
+
+Editing a purchase defaults to applying its category to all matching purchases and
+open pending drafts for the current user, and saving a rule for future imports.
+Uncheck the merchant-wide checkbox to edit only one purchase. Telegram category
+buttons use the same merchant-wide behavior. Changes and the rule are transactional.
+Learned rules use MerchantRule.merchantName and take priority over default substring
+rules; seeding defaults no longer resets category choices. Names are normalized for
+case, punctuation and whitespace; ZORBAS branches share one chain key. Other names
+require a full normalized match, to avoid merging unrelated stores.
