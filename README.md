@@ -176,3 +176,18 @@ systemctl status euro-save-deploy.timer
 journalctl -u euro-save-deploy.service -n 100 --no-pager
 cd /opt/euro-save && docker compose -f docker-compose.prod.yml ps
 ```
+
+## Interactive week and month reports
+
+`/week`, `/month` and the main menu open an inline report. Previous/next period,
+overview, categories, daily totals and paginated operations update the same message.
+Category buttons open that category's operations; existing edit/category/delete
+buttons remain available on operation pages. Historical reports have a return-to-current button.
+
+Ranges use `DEFAULT_TIMEZONE` (Nicosia by default), Monday-based weeks and exclusive
+end boundaries. Only confirmed Expense records are counted. Currency totals and
+comparisons remain separate. An ongoing period is compared through the same local
+time in the previous period, capped at the end of shorter months. Monthly forecasts
+use the average per elapsed calendar day and appear from day three onward.
+
+Validation: `npm run build` and `TZ=UTC npm test`.

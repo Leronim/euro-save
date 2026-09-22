@@ -60,6 +60,24 @@ describe('ExpensesService', () => {
     };
   };
 
+  it('queries confirmed expenses for the owner with exclusive timezone-aware boundaries', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-09-22T12:00:00Z'));
+    const { service, prisma } = createService();
+    prisma.expense.findMany.mockResolvedValue([]);
+    await service.getPeriodReport('user-1', 'w', '20260921');
+    expect(prisma.expense.findMany).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      where: { userId: 'user-1', transactionDate: {
+        gte: new Date('2026-09-20T21:00:00Z'), lt: new Date('2026-09-22T12:00:00Z'),
+      } },
+    }));
+    expect(prisma.expense.findMany).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      where: { userId: 'user-1', transactionDate: {
+        gte: new Date('2026-09-13T21:00:00Z'), lt: new Date('2026-09-15T12:00:00Z'),
+      } },
+    }));
+    jest.useRealTimers();
+  });
+
   beforeEach(() => {
     jest.useRealTimers();
   });

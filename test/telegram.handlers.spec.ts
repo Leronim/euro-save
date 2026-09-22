@@ -54,6 +54,7 @@ jest.mock('telegraf', () => {
 });
 
 import { Prisma } from '@prisma/client';
+import { reportRange } from '../src/expenses/period-report';
 import { TelegramService } from '../src/telegram/telegram.service';
 
 describe('TelegramService handlers', () => {
@@ -77,6 +78,9 @@ describe('TelegramService handlers', () => {
     };
     const expenses = {
       getOrCreateOwnerUser: jest.fn().mockResolvedValue({ id: 'user-1' }),
+      getPeriodReport: jest.fn().mockResolvedValue({
+        range: reportRange('w', undefined, 'Europe/Nicosia'), expenses: [], previous: [],
+      }),
       getTodayStats: jest.fn().mockResolvedValue({
         total: 12.4,
         currency: 'EUR',
@@ -185,6 +189,7 @@ describe('TelegramService handlers', () => {
         callbackQuery: { message: { message_id: 10 } },
         answerCbQuery: jest.fn(),
         deleteMessage: jest.fn(),
+        editMessageText: jest.fn(),
         reply: jest.fn(),
         replyWithDocument: jest.fn(),
       },
@@ -211,6 +216,28 @@ describe('TelegramService handlers', () => {
 
     expect(ctx.reply.mock.calls[0][0]).toContain('Привет');
     expect(ctx.reply.mock.calls[1][0]).toContain('Расходы за сегодня');
+  });
+
+  it('opens reports from commands and updates callback messages without sending a new one', async () => {
+    const { expenses } = createService();
+    const ctx = textCtx('/week');
+    await handlers.commands.week(ctx);
+    expect(ctx.reply).toHaveBeenCalledWith(expect.stringContaining('Расходы за неделю'), expect.objectContaining({ reply_markup: expect.objectContaining({ inline_keyboard: expect.any(Array) }) }));
+    const callback = actionCtx('r:w:20260921:d:0');
+    await callback.action.handler(callback.ctx);
+    expect(expenses.getPeriodReport).toHaveBeenLastCalledWith('user-1', 'w', '20260921');
+    expect(callback.ctx.answerCbQuery).toHaveBeenCalled();
+    expect(callback.ctx.editMessageText).toHaveBeenCalled();
+    expect(callback.ctx.reply).not.toHaveBeenCalled();
+  });
+
+  it('ignores only Telegram unchanged-message errors', async () => {
+    createService();
+    const callback = actionCtx('r:m:20260901:s:0');
+    callback.ctx.editMessageText.mockRejectedValue(new Error('Bad Request: message is not modified'));
+    await expect(callback.action.handler(callback.ctx)).resolves.toBeUndefined();
+    callback.ctx.editMessageText.mockRejectedValue(new Error('network error'));
+    await expect(callback.action.handler(callback.ctx)).rejects.toThrow('network error');
   });
 
   it('handles manual expense text', async () => {

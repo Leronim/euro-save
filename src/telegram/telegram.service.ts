@@ -6,6 +6,7 @@ import { Context, Markup, Telegraf } from 'telegraf';
 import { CategoriesService } from '../categories/categories.service';
 import { formatMoney } from '../common/utils/money';
 import { ExpensesService } from '../expenses/expenses.service';
+import { renderPeriodReport, ReportPeriod, ReportView } from '../expenses/period-report';
 import { expenseConfirmationKeyboard } from './telegram-keyboards';
 
 type PendingWithCategory = PendingExpense & { category?: Category | null };
@@ -151,6 +152,12 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
 
     this.bot.command('export', async (ctx) => {
       await this.replyExportOptions(ctx);
+    });
+
+    this.bot.action(/^r:(w|m):(\d{8}):(s|c|d|o|u|[a-f0-9-]{36}):(\d{1,5})$/, async (ctx) => {
+      const [, period, anchor, view, page] = ctx.match as RegExpExecArray;
+      await ctx.answerCbQuery();
+      await this.replyPeriodReport(ctx, period as ReportPeriod, anchor, view as ReportView, Number(page));
     });
 
     this.bot.action(/^expense:confirm:(.+)$/, async (ctx) => {
@@ -352,40 +359,26 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async replyCurrentWeekStats(ctx: Context) {
-    const user = await this.ensureTelegramUser(ctx);
-    const stats = await this.expenses.getCurrentWeekStats(user.id);
-    const startLabel = dayjs(stats.start).format('DD.MM');
-    const endLabel = dayjs(stats.end).format('DD.MM');
-    const lines = [
-      `📊 Расходы за неделю ${startLabel}–${endLabel}`,
-      '',
-      `Всего: ${formatMoney(stats.total, stats.currency)}`,
-      '',
-      ...stats.byCategory.map((row) => `${row.category}: ${formatMoney(row.amount, stats.currency)}`),
-    ];
-
-    await ctx.reply(lines.join('\n'), {
-      reply_markup: this.mainMenuKeyboard(),
-    });
+    await this.replyPeriodReport(ctx, 'w');
   }
 
   private async replyCurrentMonthStats(ctx: Context) {
+    await this.replyPeriodReport(ctx, 'm');
+  }
+
+  private async replyPeriodReport(ctx: Context, period: ReportPeriod, anchor?: string, view: ReportView = 's', page = 0) {
     const user = await this.ensureTelegramUser(ctx);
-    const stats = await this.expenses.getCurrentMonthStats(user.id);
-    const lines = [
-      `📊 Расходы за ${stats.monthName}`,
-      '',
-      `Всего: ${formatMoney(stats.total, stats.currency)}`,
-      `Операций: ${stats.expenseCount}`,
-      `Средний чек: ${formatMoney(stats.averageExpense, stats.currency)}`,
-      '',
-      ...(stats.byCategory.length
-        ? stats.byCategory.map((row) => `${row.category}: ${formatMoney(row.amount, stats.currency)}`)
-        : ['Нет расходов']),
-    ];
-    await ctx.reply(lines.join('\n'), {
-      reply_markup: this.mainMenuKeyboard(),
-    });
+    const report = await this.expenses.getPeriodReport(user.id, period, anchor);
+    const message = renderPeriodReport(report, view, page);
+    if (ctx.callbackQuery) {
+      try {
+        await ctx.editMessageText(message.text, { reply_markup: message.reply_markup });
+      } catch (error) {
+        if (!(error instanceof Error) || !error.message.includes('message is not modified')) throw error;
+      }
+    } else {
+      await ctx.reply(message.text, { reply_markup: message.reply_markup });
+    }
   }
 
   private async replyHalfYearStats(ctx: Context) {

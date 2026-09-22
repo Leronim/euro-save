@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { ConfigService } from '@nestjs/config';
 import { Category, Expense, ExpenseSource, PendingExpense, Prisma, User } from '@prisma/client';
 import dayjs from 'dayjs';
+import { reportRange, ReportPeriod } from './period-report';
 import 'dayjs/locale/ru';
 import { CategoriesService } from '../categories/categories.service';
 import { dayRange, halfYearRange, monthRange, weekRange } from '../common/utils/date';
@@ -151,6 +152,20 @@ export class ExpensesService {
     });
     if (!pending) throw new NotFoundException('Pending expense not found');
     return pending;
+  }
+
+  async getPeriodReport(userId: string, period: ReportPeriod, anchor?: string) {
+    const timezone = this.config.get<string>('DEFAULT_TIMEZONE', 'Europe/Nicosia');
+    const range = reportRange(period, anchor, timezone);
+    const query = (start: Date, end: Date) => this.prisma.expense.findMany({
+      where: { userId, transactionDate: { gte: start, lt: end } },
+      include: { category: true },
+      orderBy: [{ transactionDate: 'desc' }, { id: 'desc' }],
+    });
+    const [expenses, previous] = await Promise.all([
+      query(range.start, range.cutoff), query(range.previousStart, range.previousCutoff),
+    ]);
+    return { range, expenses, previous };
   }
 
   async getCurrentMonthStats(userId: string) {
