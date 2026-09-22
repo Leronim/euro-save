@@ -46,11 +46,12 @@ function render(){
   ++state.historyRequest;
   if(!state.report)return;
   const {range:r,expenses,previous}=state.report;const rows=expenses.filter(x=>x.currency===state.currency);const total=sum(rows);const old=sum(previous.filter(x=>x.currency===state.currency));const cats=groups(rows);
-  $('title').textContent={home:'Обзор расходов',categories:'По категориям',operations:'Все операции'}[state.tab];
+  $('title').textContent={home:'Обзор расходов',categories:'По категориям',operations:'Все операции',salary:'Калькулятор накоплений'}[state.tab];
   $('period-label').textContent=periodLabel();$('next').disabled=r.active;$('current').hidden=r.active;
   document.querySelectorAll('[data-tab]').forEach(b=>{b.classList.toggle('active',b.dataset.tab===state.tab);b.setAttribute('aria-current',b.dataset.tab===state.tab?'page':'false');});
   document.querySelectorAll('[data-period]').forEach(b=>b.classList.toggle('selected',b.dataset.period===state.period));
-  $('controls').hidden=state.tab==='operations'&&state.historyMode;
+  $('controls').hidden=state.tab==='salary'||state.tab==='operations'&&state.historyMode;
+  $('add').hidden=state.tab==='salary';
   syncBack();renderNotice();
   if(state.tab==='home'){
     const change=old?`${total<old?'↓':total>old?'↑':'→'} ${Math.abs((total-old)/old*100).toFixed(0)}% к прошлому периоду`:'Нет расходов для сравнения';
@@ -60,6 +61,8 @@ function render(){
   }else if(state.tab==='categories'){
     let offset=0;const gradient=cats.map((g,i)=>{const start=offset;offset+=total?g.amount/total*100:0;return `${colors[i%colors.length]} ${start}% ${offset}%`;}).join(',');
     $('content').innerHTML=`<section class="card">${cats.length?`<div class="donut" role="img" aria-label="Распределение расходов по категориям" style="background:conic-gradient(${gradient})"><div><strong>${cats.length}</strong><small>категорий</small></div></div>${categoryRows(cats,total)}`:empty('Здесь появятся категории ваших покупок.')}</section><p class="muted">Нажмите на категорию, чтобы посмотреть покупки.</p>${rulesSummary()}`;
+  }else if(state.tab==='salary'){
+    renderSalary();
   }else if(state.historyMode){
     renderHistory();
   }else{
@@ -158,3 +161,39 @@ $('delete-expense').onclick=async()=>{
   catch(error){$('form-error').textContent=error.message;}
   finally{buttons.forEach(b=>b.disabled=false);syncBack();}
 };
+
+async function renderSalary(){
+  const request=state.historyRequest;
+  const currency=state.salaryCurrency??state.currency;
+  $('content').innerHTML='<p class="muted" role="status">Загружаем калькулятор…</p>';
+  try{
+    const result=await api('salary?currency='+encodeURIComponent(currency));
+    if(request!==state.historyRequest||state.tab!=='salary')return;
+    const p=result.plan;
+    $('content').innerHTML=`<section class="card"><form id="salary-form"><h2>От зарплаты до зарплаты</h2><p class="muted">Настройки сохраняются и используются каждый зарплатный период.</p><div class="form-grid"><label>Зарплата на руки<input name="salary" type="number" min="0" max="9999999999.99" step="0.01" inputmode="decimal" required value="${result.configured?esc(p.salary):''}" placeholder="0.00"></label><label>Валюта<select name="currency" id="salary-currency">${[...new Set(['EUR','USD','GBP',currency,...state.report.expenses.map(r=>r.currency)])].sort().map(c=>`<option value="${esc(c)}" ${c===currency?'selected':''}>${esc(c)}</option>`).join('')}</select></label></div><label>День выплаты зарплаты<input name="payday" type="number" min="1" max="31" step="1" required value="${p.payday}"></label><p class="muted">По умолчанию — 27-е. Если такого числа в месяце нет, используем последний день.</p><h2>Фоновые расходы за период</h2><p class="muted">Только расходы, которых нет в приложении. Например, аренда наличными. Не добавляйте сюда уже записанные покупки, иначе они вычтутся дважды.</p><div id="background-rows"></div><button type="button" class="text-button" id="background-add">＋ Добавить расход</button><p id="salary-error" role="alert"></p><button type="submit" class="primary">Рассчитать и сохранить</button></form></section><div id="salary-result"></div>`;
+    p.background.forEach(addBackgroundRow);
+    $('background-add').onclick=()=>{if($('background-rows').children.length<30)addBackgroundRow({name:'',amount:''});salaryDirty();};
+    $('salary-currency').onchange=e=>{state.salaryCurrency=e.target.value;render();};
+    $('salary-form').oninput=salaryDirty;
+    $('salary-form').onsubmit=async e=>{
+      e.preventDefault();const form=e.target;
+      const input={salary:Number(form.elements.salary.value),payday:Number(form.elements.payday.value),currency:form.elements.currency.value,background:[...$('background-rows').children].map(row=>({name:row.querySelector('[name=backgroundName]').value.trim(),amount:Number(row.querySelector('[name=backgroundAmount]').value)}))};
+      form.querySelectorAll('button,input,select').forEach(b=>b.disabled=true);$('salary-error').textContent='';
+      const current=state.historyRequest;
+      try{const saved=await api('salary',{method:'POST',body:JSON.stringify(input)});if(current===state.historyRequest&&state.tab==='salary')showSalaryResult(saved);}
+      catch(error){if(current===state.historyRequest&&$('salary-error'))$('salary-error').textContent=error.message;}
+      finally{form.querySelectorAll('button,input,select').forEach(b=>b.disabled=false);}
+    };
+    if(result.configured)showSalaryResult(result);
+  }catch(error){if(request!==state.historyRequest)return;$('content').innerHTML=`<p role="alert">${esc(error.message)}</p><button id="salary-retry">Попробовать снова</button>`;$('salary-retry').onclick=()=>render();}
+}
+function salaryDirty(){if($('salary-result'))$('salary-result').innerHTML='<p class="muted">Нажмите «Рассчитать и сохранить», чтобы обновить результат.</p>';}
+function addBackgroundRow(item){
+  const row=document.createElement('div');row.className='background-row';
+  row.innerHTML=`<label>Название<input name="backgroundName" maxlength="100" required placeholder="Например, аренда" value="${esc(item.name)}"></label><label>Сумма<input name="backgroundAmount" type="number" min="0" max="9999999999.99" step="0.01" inputmode="decimal" required value="${esc(item.amount)}"></label><button type="button" class="quiet" aria-label="Убрать фоновый расход">✕</button>`;
+  row.querySelector('button').onclick=()=>{row.remove();salaryDirty();};$('background-rows').append(row);
+}
+function showSalaryResult(result){
+  const r=result,fmt=value=>money(value,r.plan.currency);
+  $('salary-result').innerHTML=`<section class="card hero"><small>${esc(r.cycle.label)}</small><h2>${r.remaining>=0?'Остаток сейчас':'Не хватает уже сейчас'}</h2><div class="total">${esc(fmt(Math.abs(r.remaining)))}</div><p class="note">Зарплата минус все фоновые расходы периода и подтверждённые расходы из приложения. Это расчётный остаток, а не баланс банковского счёта.</p></section><section class="card"><h2>Из чего складывается</h2><div class="salary-line"><span>Зарплата на руки</span><strong>${esc(fmt(r.plan.salary))}</strong></div><div class="salary-line"><span>Фоновые расходы</span><strong>− ${esc(fmt(r.background))}</strong></div><div class="salary-line"><span>В приложении · ${r.count} оп.</span><strong>− ${esc(fmt(r.spent))}</strong></div><p class="muted">Следующая зарплата: ${esc(r.cycle.nextPayday)}. Учитывается только ${esc(r.plan.currency)}, без пересчёта других валют.${r.pendingCount?` Есть неподтверждённые покупки (${r.pendingCount}) — они пока не включены.`:''}</p></section><section class="card"><h2>${r.projectedSavings!==null&&r.projectedSavings<0?'Возможный дефицит к зарплате':'Получится отложить к зарплате'}</h2>${r.projectedSavings===null?'<p class="muted">Прогноз появится после трёх дней периода, когда будет хотя бы один подтверждённый расход.</p>':`<div class="total">≈ ${esc(fmt(Math.abs(r.projectedSavings)))}</div><p class="muted">При сохранении среднего темпа расходов за ${r.cycle.elapsed} дн. Ожидаемые расходы в приложении за весь период: ${esc(fmt(r.projectedExpenses))}. Фоновые расходы вычтены один раз. Неполный день и крупные разовые покупки могут заметно менять прогноз.</p>`}</section>`;
+}

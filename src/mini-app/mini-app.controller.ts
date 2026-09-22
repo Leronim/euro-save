@@ -1,11 +1,13 @@
 import dayjs from 'dayjs';
+import { Type } from 'class-transformer';
+import { salaryCycle, salaryResult } from './salary-calculator';
 import { historyQuery } from './history-query';
 import { CategoriesService } from '../categories/categories.service';
 import { merchantKey } from '../categories/merchant-key';
 import { resolvePending } from '../expenses/pending-actions';
 import { UndoService } from './undo.service';
 import { BadRequestException, Body, Controller, Delete, NotFoundException, Get, Header, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
-import { IsIn, IsBoolean, IsOptional, IsDateString, IsNumber, IsString, IsUUID, Length, Matches, Max, Min } from 'class-validator';
+import { IsArray, ArrayMaxSize, ValidateNested, IsInt, IsIn, IsBoolean, IsOptional, IsDateString, IsNumber, IsString, IsUUID, Length, Matches, Max, Min } from 'class-validator';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Prisma } from '@prisma/client';
@@ -20,6 +22,17 @@ export class ExpenseInput {
   @Matches(/^[A-Z]{3}$/) currency!: string;
   @IsUUID() categoryId!: string;
   @IsDateString({ strict: true }) transactionDate!: string;
+}
+
+export class BackgroundExpenseInput {
+  @IsString() @Length(1, 100) name!: string;
+  @IsNumber({ maxDecimalPlaces: 2, allowInfinity: false, allowNaN: false }) @Min(0) @Max(9999999999.99) amount!: number;
+}
+export class SalaryInput {
+  @Matches(/^[A-Z]{3}$/) currency!: string;
+  @IsNumber({ maxDecimalPlaces: 2, allowInfinity: false, allowNaN: false }) @Min(0) @Max(9999999999.99) salary!: number;
+  @IsInt() @Min(1) @Max(31) payday!: number;
+  @IsArray() @ArrayMaxSize(30) @ValidateNested({ each: true }) @Type(() => BackgroundExpenseInput) background!: BackgroundExpenseInput[];
 }
 
 export class BudgetInput {
@@ -59,6 +72,30 @@ export class MiniAppController {
     const user = await this.user(req.telegramId);
     try { return await this.expenses.getPeriodReport(user.id, period as 'w' | 'm', anchor); }
     catch (error) { if (error instanceof Error && error.message === 'Invalid report date') throw new BadRequestException(error.message); throw error; }
+  }
+  private async calculateSalary(user: { id: string; timezone: string }, plan: SalaryInput, configured: boolean) {
+    const now = new Date();
+    const cycle = salaryCycle(plan.payday, user.timezone, now);
+    const aggregate = await this.prisma.expense.aggregate({ where: { userId: user.id, currency: plan.currency, transactionDate: { gte: cycle.start, lte: now } }, _sum: { amount: true }, _count: true });
+    const background = plan.background.reduce((total, row) => total.add(row.amount), new Prisma.Decimal(0)).toNumber();
+    const pendingCount = await this.prisma.pendingExpense.count({ where: { userId: user.id, currency: plan.currency, status: { in: ['pending', 'edited'] } } });
+    return { configured, plan, cycle, pendingCount, count: aggregate._count, ...salaryResult(Number(plan.salary), background, Number(aggregate._sum.amount ?? 0), cycle.days, cycle.elapsed, aggregate._count) };
+  }
+  @Get('salary') @Header('Cache-Control', 'no-store')
+  async salary(@Req() req: { telegramId: string }, @Query('currency') currency = 'EUR') {
+    if (!/^[A-Z]{3}$/.test(currency)) throw new BadRequestException('Некорректная валюта');
+    const user = await this.user(req.telegramId);
+    const saved = await this.prisma.salaryPlan.findUnique({ where: { userId_currency: { userId: user.id, currency } } });
+    const plan: SalaryInput = saved ? { currency, salary: Number(saved.salary), payday: saved.payday, background: saved.background as unknown as BackgroundExpenseInput[] } : { currency, salary: 0, payday: 27, background: [] };
+    return this.calculateSalary(user, plan, !!saved);
+  }
+  @Post('salary')
+  async saveSalary(@Req() req: { telegramId: string }, @Body() input: SalaryInput) {
+    const user = await this.user(req.telegramId);
+    if (input.background.some(row => !row.name.trim())) throw new BadRequestException('Укажите название фонового расхода');
+    const data = { salary: input.salary, payday: input.payday, background: input.background.map(row => ({ name: row.name.trim(), amount: row.amount })) };
+    await this.prisma.salaryPlan.upsert({ where: { userId_currency: { userId: user.id, currency: input.currency } }, create: { ...data, userId: user.id, currency: input.currency }, update: data });
+    return this.calculateSalary(user, input, true);
   }
   @Get('history') @Header('Cache-Control', 'no-store')
   async history(@Req() req: { telegramId: string }, @Query() query: Record<string, string>) {
