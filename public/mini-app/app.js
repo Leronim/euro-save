@@ -95,7 +95,8 @@ $('dismiss').onclick=()=>$('editor').close();$('add').onclick=()=>openEditor();$
 $('currency').onchange=e=>{state.currency=e.target.value;render();};
 $('prev').onclick=()=>{state.dayFilter=null;state.anchor=state.report.range.previousAnchor;load();};$('next').onclick=()=>{state.dayFilter=null;state.anchor=state.report.range.nextAnchor;load();};$('current').onclick=()=>{state.dayFilter=null;state.anchor='';load();};
 document.querySelectorAll('[data-period]').forEach(b=>b.onclick=()=>{state.period=b.dataset.period;state.anchor='';state.dayFilter=null;state.limit=30;load();});
-document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab;state.historyMode=true;state.filter=null;state.dayFilter=null;state.limit=30;render();});
+document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab;state.historyMode=true;state.filter=null;state.dayFilter=null;state.limit=30;if(state.tab==='home'||state.tab==='categories')load();else render();});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&!state.loading&&state.report&&!document.querySelector('dialog[open]')&&(state.tab==='home'||state.tab==='categories'))load();});
 load();
 
 function merchantLabel(name){if(/\bzorba['’]?s\b/i.test(name))return 'Zorbas';if(/^lidl\b/i.test(name))return 'Lidl';return name;}

@@ -1,5 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
+dayjs.extend(utc);
+dayjs.extend(timezone);
 import { ParsedBankMessage } from './parsed-bank-message';
 
 const STATUS_BY_BANK_WORD = {
@@ -128,9 +132,18 @@ export class BankMessageParserService {
   }
 
   private combineReceivedDateWithTime(receivedAt: Date | string, transactionTime: string): Date {
-    const received = dayjs(receivedAt);
-    const [hour, minute] = transactionTime.split(':').map(Number);
-    return received.hour(hour).minute(minute).second(0).millisecond(0).toDate();
+    // Eurobank/Hellenic SMS clock times are Cyprus local time, not the server's UTC.
+    const zone = 'Europe/Nicosia';
+    const received = dayjs(receivedAt).tz(zone);
+    let date = received.format('YYYY-MM-DD');
+    let transaction = dayjs.tz(`${date} ${transactionTime}`, zone);
+    // An SMS just after midnight may refer to a purchase before midnight.
+    // Keep a small clock-skew allowance; never turn a late-evening purchase into tomorrow's.
+    if (transaction.diff(received, 'hour', true) > 12) {
+      date = dayjs.utc(date).subtract(1, 'day').format('YYYY-MM-DD');
+      transaction = dayjs.tz(`${date} ${transactionTime}`, zone);
+    }
+    return transaction.toDate();
   }
 
   private normalizeAmount(value: string): number {
