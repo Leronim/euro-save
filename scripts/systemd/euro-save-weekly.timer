@@ -1,0 +1,10 @@
+[Unit]
+Description=Euro Save report every Sunday evening (Cyprus)
+
+[Timer]
+OnCalendar=Sun *-*-* 20:00:00 Europe/Nicosia
+AccuracySec=1s
+Unit=euro-save-weekly.service
+
+[Install]
+WantedBy=timers.target

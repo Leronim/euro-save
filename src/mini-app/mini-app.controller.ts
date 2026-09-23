@@ -29,6 +29,7 @@ export class BackgroundExpenseInput {
   @IsNumber({ maxDecimalPlaces: 2, allowInfinity: false, allowNaN: false }) @Min(0) @Max(9999999999.99) amount!: number;
 }
 export class SalaryInput {
+  @IsOptional() @IsNumber({ maxDecimalPlaces: 2, allowInfinity: false, allowNaN: false }) @Min(0) @Max(9999999999.99) savingsTarget?: number;
   @Matches(/^[A-Z]{3}$/) currency!: string;
   @IsNumber({ maxDecimalPlaces: 2, allowInfinity: false, allowNaN: false }) @Min(0) @Max(9999999999.99) salary!: number;
   @IsInt() @Min(1) @Max(31) payday!: number;
@@ -79,23 +80,23 @@ export class MiniAppController {
     const aggregate = await this.prisma.expense.aggregate({ where: { userId: user.id, currency: plan.currency, transactionDate: { gte: cycle.start, lte: now } }, _sum: { amount: true }, _count: true });
     const background = plan.background.reduce((total, row) => total.add(row.amount), new Prisma.Decimal(0)).toNumber();
     const pendingCount = await this.prisma.pendingExpense.count({ where: { userId: user.id, currency: plan.currency, status: { in: ['pending', 'edited'] } } });
-    return { configured, plan, cycle, pendingCount, count: aggregate._count, ...salaryResult(Number(plan.salary), background, Number(aggregate._sum.amount ?? 0), cycle.days, cycle.elapsed, aggregate._count) };
+    return { configured, plan, cycle, pendingCount, count: aggregate._count, ...salaryResult(Number(plan.salary), background, Number(aggregate._sum.amount ?? 0), cycle.days, cycle.elapsed, aggregate._count, plan.savingsTarget ?? 1000) };
   }
   @Get('salary') @Header('Cache-Control', 'no-store')
   async salary(@Req() req: { telegramId: string }, @Query('currency') currency = 'EUR') {
     if (!/^[A-Z]{3}$/.test(currency)) throw new BadRequestException('Некорректная валюта');
     const user = await this.user(req.telegramId);
     const saved = await this.prisma.salaryPlan.findUnique({ where: { userId_currency: { userId: user.id, currency } } });
-    const plan: SalaryInput = saved ? { currency, salary: Number(saved.salary), payday: saved.payday, background: saved.background as unknown as BackgroundExpenseInput[] } : { currency, salary: 0, payday: 27, background: [] };
+    const plan: SalaryInput = saved ? { currency, salary: Number(saved.salary), payday: saved.payday, savingsTarget: Number(saved.savingsTarget), background: saved.background as unknown as BackgroundExpenseInput[] } : { currency, salary: 0, payday: 27, savingsTarget: 1000, background: [] };
     return this.calculateSalary(user, plan, !!saved);
   }
   @Post('salary')
   async saveSalary(@Req() req: { telegramId: string }, @Body() input: SalaryInput) {
     const user = await this.user(req.telegramId);
     if (input.background.some(row => !row.name.trim())) throw new BadRequestException('Укажите название фонового расхода');
-    const data = { salary: input.salary, payday: input.payday, background: input.background.map(row => ({ name: row.name.trim(), amount: row.amount })) };
-    await this.prisma.salaryPlan.upsert({ where: { userId_currency: { userId: user.id, currency: input.currency } }, create: { ...data, userId: user.id, currency: input.currency }, update: data });
-    return this.calculateSalary(user, input, true);
+    const data = { ...(input.savingsTarget === undefined ? {} : { savingsTarget: input.savingsTarget }), salary: input.salary, payday: input.payday, background: input.background.map(row => ({ name: row.name.trim(), amount: row.amount })) };
+    const saved = await this.prisma.salaryPlan.upsert({ where: { userId_currency: { userId: user.id, currency: input.currency } }, create: { ...data, userId: user.id, currency: input.currency }, update: data });
+    return this.calculateSalary(user, { ...input, savingsTarget: Number(saved.savingsTarget) }, true);
   }
   @Get('history') @Header('Cache-Control', 'no-store')
   async history(@Req() req: { telegramId: string }, @Query() query: Record<string, string>) {

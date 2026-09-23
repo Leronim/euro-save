@@ -18,13 +18,13 @@ export function salaryCycle(payday: number, zone: string, now = new Date()) {
   };
 }
 
-export function salaryResult(salary: number, background: number, spent: number, days: number, elapsed: number, count: number) {
+export function salaryResult(salary: number, background: number, spent: number, days: number, elapsed: number, count: number, savingsTarget = 1000) {
   const cents = (value: number) => Math.round(value * 100);
   const available = cents(salary) - cents(background);
   const remaining = (available - cents(spent)) / 100;
   const projectedExpenses = elapsed >= 3 && count > 0 ? Math.round(cents(spent) / elapsed * days) / 100 : null;
   const remainingDays = Math.max(1, days - elapsed + 1);
-  const targets = [500, 1000, 1500].map(target => {
+  const targetResult = (target: number) => {
     const budget = available - cents(target);
     const left = budget - cents(spent);
     return {
@@ -32,6 +32,7 @@ export function salaryResult(salary: number, background: number, spent: number, 
       dailyLimit: Math.floor(Math.max(0, left) / remainingDays) / 100,
       shortfall: Math.max(0, -left) / 100, achievable: left >= 0,
     };
-  });
-  return { remainingDays, targets, background, spent, remaining, projectedExpenses, projectedSavings: projectedExpenses === null ? null : (available - cents(projectedExpenses)) / 100 };
+  };
+  const targets = [500, 1000, 1500].map(targetResult);
+  return { remainingDays, targets, selectedTarget: targetResult(savingsTarget), background, spent, remaining, projectedExpenses, projectedSavings: projectedExpenses === null ? null : (available - cents(projectedExpenses)) / 100 };
 }

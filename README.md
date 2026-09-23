@@ -240,3 +240,25 @@ The new MonthlyBudget and UndoAction tables are created by the additive migratio
 Categories now expose saved merchant rules; bulk changes show the affected purchase
 count first. Day chart bars open that day's purchases. Operations are grouped by date,
 with daily totals; bank descriptions remain visible inside the edit form.
+
+### Weekly Telegram digest (VPS)
+
+`euro-save-weekly.timer` runs Sundays at 20:00 Europe/Nicosia (DST-aware),
+using the salary plan's saved `savingsTarget` for each currency. The default
+for an existing plan is 1000; change it in the Mini App's savings calculator.
+
+Install the units from `scripts/systemd/` into `/etc/systemd/system/`, run
+`systemctl daemon-reload`, then `systemctl enable --now euro-save-weekly.timer`.
+Disable with `systemctl disable --now euro-save-weekly.timer`. Change the
+schedule with a systemd timer override. The timer sends only on its scheduled
+activation; it does not send a catch-up report after downtime.
+
+The host wrapper uses the deployment lock and stores weekly delivery markers
+in `/var/lib/euro-save-weekly/`. Check with
+`systemctl list-timers euro-save-weekly.timer` and
+`journalctl -u euro-save-weekly.service`.
+Validate report generation without sending a Telegram message:
+
+```sh
+docker compose -f docker-compose.prod.yml exec -T app node - --dry-run < scripts/send-weekly-report.cjs
+```

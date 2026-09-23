@@ -1,0 +1,10 @@
+[Unit]
+Description=Euro Save weekly Telegram expense report
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/euro-save/scripts/send-weekly-report.sh
+TimeoutStartSec=300
